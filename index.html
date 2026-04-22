@@ -1491,14 +1491,23 @@ function criarListaComCheckboxesSelecionados() {
   // Força busca direta por IDs
   const pedidosEncontrados = [];
   idsCheckboxes.forEach(idCheckbox => {
-    // ID agora está no formato: "pedidoId-modelobase"
-    const [pedidoId, modeloKey] = idCheckbox.split('-');
+    console.log(`Buscando por ID: "${idCheckbox}"`);
     
-    const pedidoEncontrado = FILTRADOS.find(p => {
+    // Tenta primeiro buscar por ID completo (formato novo: pedido-modelo)
+    let pedidoEncontrado = FILTRADOS.find(p => {
       const pId = String(p.orderId || p.id);
       const pModeloKey = p.modeloBase?.replace(/\s+/g, '')?.toLowerCase() || 'produto';
-      return pId === pedidoId && pModeloKey === modeloKey;
+      const expectedId = `${pId}-${pModeloKey}`;
+      return expectedId === idCheckbox;
     });
+    
+    // Se não encontrar, tenta buscar só pelo número do pedido (compatibilidade com formato antigo)
+    if (!pedidoEncontrado) {
+      const pedidoId = idCheckbox.split('-')[0]; // Pega só a primeira parte
+      pedidoEncontrado = FILTRADOS.find(p => {
+        return String(p.orderId || p.id) === pedidoId;
+      });
+    }
     
     if (pedidoEncontrado) {
       pedidosEncontrados.push(pedidoEncontrado);
