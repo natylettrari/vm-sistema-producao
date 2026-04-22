@@ -758,7 +758,7 @@ function renderTabela(pedidos) {
     const dataExib = (parts[0]&&parts[1] ? parts[0]+'/'+parts[1] : (p.dataEnvio||'—')) + (mostrarAno ? ` <span style="font-size:9px;background:#f0ecf7;color:var(--lilac);padding:1px 3px;border-radius:3px">${anoEnvio}</span>` : '');
     const duExib = (p.diasUteisRestantes!==null&&p.diasUteisRestantes!==undefined) ? `<div style="font-size:9px;color:${p.diasUteisRestantes<3?'#c0392b':p.diasUteisRestantes<7?'#8a6400':'var(--text3)'}">${p.diasUteisRestantes<0?'Atrasado':p.diasUteisRestantes+'du'}</div>` : '';
     return `<tr class="${p.isUrgente?'urgente-row':''}">
-      <td style="width:28px"><input type="checkbox" class="rcb" data-id="${p.orderId || p.id}-${p.modeloBase?.replace(/\s+/g, '')?.toLowerCase() || 'produto'}"></td>
+      <td style="width:28px"><input type="checkbox" class="rcb" data-id="${(p.orderId || p.id).toString().replace(/[^a-zA-Z0-9]/g, '')}-${(p.modeloBase || 'produto').replace(/[^a-zA-Z0-9]/g, '').toLowerCase()}"></td>
       <td style="width:85px" class="num">${p.numero}${p.isDraft?'<span class="draft-pill">D</span>':''}${p.isKitItem?'<span class="kit-pill">Kit</span>':''}${p.foiEditado?'<span class="edit-badge">Ed.</span>':''}${p.listaNumero?`<span class="lista-pill">#${p.listaNumero}</span>`:''}</td>
       <td style="width:65px;font-size:11px;color:var(--text3)">${p.dataPedido||'—'}</td>
       <td style="width:120px;font-weight:500;font-size:12px">${p.modeloBase}</td>
@@ -1399,7 +1399,7 @@ function renderLista(peds,grupos,ordBy,de,ate) {
   const gruposHtml=Object.entries(grupos).map(([nome,items],gi)=>{
     const cor=getCM(nome);
     const rows=items.map(p=>`<tr>
-      <td style="width:26px"><input type="checkbox" class="lrcb" data-id="${p.orderId || p.id}-${p.modeloBase?.replace(/\s+/g, "")?.toLowerCase() || "produto"}"></td>
+      <td style="width:26px"><input type="checkbox" class="lrcb" data-id="${(p.orderId || p.id).toString().replace(/[^a-zA-Z0-9]/g, "")}-${(p.modeloBase || "produto").replace(/[^a-zA-Z0-9]/g, "").toLowerCase()}"></td>
       <td style="width:65px" class="num">${p.numero}${p.isKitItem?'<span class="kit-pill">K</span>':''}</td>
       <td style="width:108px;font-size:11px;font-weight:500">${p.modeloBase}</td>
       <td style="width:130px;font-size:11px">${p.colecaoCor}</td>
@@ -1493,27 +1493,35 @@ function criarListaComCheckboxesSelecionados() {
   idsCheckboxes.forEach(idCheckbox => {
     console.log(`Buscando por ID: "${idCheckbox}"`);
     
-    // Tenta primeiro buscar por ID completo (formato novo: pedido-modelo)
-    let pedidoEncontrado = FILTRADOS.find(p => {
-      const pId = String(p.orderId || p.id);
-      const pModeloKey = p.modeloBase?.replace(/\s+/g, '')?.toLowerCase() || 'produto';
-      const expectedId = `${pId}-${pModeloKey}`;
-      return expectedId === idCheckbox;
-    });
+    // Normaliza o ID do checkbox para comparação
+    const [pedidoIdRaw, modeloKeyRaw] = idCheckbox.split('-');
     
-    // Se não encontrar, tenta buscar só pelo número do pedido (compatibilidade com formato antigo)
-    if (!pedidoEncontrado) {
-      const pedidoId = idCheckbox.split('-')[0]; // Pega só a primeira parte
-      pedidoEncontrado = FILTRADOS.find(p => {
-        return String(p.orderId || p.id) === pedidoId;
-      });
-    }
+    // Busca o pedido correspondente
+    const pedidoEncontrado = FILTRADOS.find(p => {
+      const pIdNormalizado = (p.orderId || p.id).toString().replace(/[^a-zA-Z0-9]/g, '');
+      const pModeloNormalizado = (p.modeloBase || 'produto').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+      
+      const expectedId = `${pIdNormalizado}-${pModeloNormalizado}`;
+      const match = expectedId === idCheckbox;
+      
+      if (match) {
+        console.log(`✅ MATCH ENCONTRADO: "${expectedId}" === "${idCheckbox}"`);
+      }
+      
+      return match;
+    });
     
     if (pedidoEncontrado) {
       pedidosEncontrados.push(pedidoEncontrado);
       console.log(`✅ Encontrou pedido ${pedidoEncontrado.numero} - ${pedidoEncontrado.modeloBase} para ID ${idCheckbox}`);
     } else {
       console.log(`❌ NÃO encontrou pedido para ID ${idCheckbox}`);
+      console.log(`Tentando buscar pedidos disponíveis:`);
+      FILTRADOS.slice(0,3).forEach(p => {
+        const pId = (p.orderId || p.id).toString().replace(/[^a-zA-Z0-9]/g, '');
+        const pModelo = (p.modeloBase || 'produto').replace(/[^a-zA-Z0-9]/g, '').toLowerCase();
+        console.log(`  Disponível: "${pId}-${pModelo}" (${p.numero} - ${p.modeloBase})`);
+      });
     }
   });
   
@@ -2201,7 +2209,7 @@ function renderListaSalva(peds, grupos, lista) {
   const gruposHtml = Object.entries(grupos).map(([nome, items], gi) => {
     const cor = getCM(nome);
     const rows = items.map(p => `<tr class="${p.isUrgente?'urgente-row':''}">
-      <td style="width:26px"><input type="checkbox" class="lrcb" data-id="${p.orderId || p.id}-${p.modeloBase?.replace(/\s+/g, "")?.toLowerCase() || "produto"}"></td>
+      <td style="width:26px"><input type="checkbox" class="lrcb" data-id="${(p.orderId || p.id).toString().replace(/[^a-zA-Z0-9]/g, "")}-${(p.modeloBase || "produto").replace(/[^a-zA-Z0-9]/g, "").toLowerCase()}"></td>
       <td style="width:65px" class="num">${p.numero}${p.isKitItem?'<span class="kit-pill">K</span>':''}${p.isUrgente?'<span class="urgente-badge">!</span>':''}</td>
       <td style="width:108px;font-size:11px;font-weight:500">${p.modeloBase}</td>
       <td style="width:130px;font-size:11px">${p.colecaoCor}</td>
