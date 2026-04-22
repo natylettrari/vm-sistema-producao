@@ -1799,9 +1799,6 @@ async function salvarListaProducao(pedIds, titulo, dataEnvio, peds) {
     
     atualizarStats();
     renderTabela(FILTRADOS);
-    
-    // Força atualização imediata da interface
-    filtrar(); // Chama a função de filtro que re-aplica os filtros e atualiza FILTRADOS
 
     // Atualiza cabeçalho de impressão
     const phEl = document.getElementById('print-header-info');
@@ -1811,12 +1808,9 @@ async function salvarListaProducao(pedIds, titulo, dataEnvio, peds) {
     renderMinhasListas();
     
     // Força re-render completo para garantir que as mudanças apareçam
-    // Forçar atualização do array FILTRADOS para refletir as mudanças de status
-    filtrar(); // Esta é a função correta que existe no código
     setTimeout(() => {
       filtrar(); // Re-aplica filtros para atualizar a visualização
       atualizarStats(); // Atualiza estatísticas novamente
-      renderTabela(FILTRADOS); // Força re-render da tabela com novos status
     }, 100);
 
     // Abre modal de confirmação com opção de imprimir
