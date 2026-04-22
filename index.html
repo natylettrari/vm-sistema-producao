@@ -1491,7 +1491,7 @@ function criarListaComCheckboxesSelecionados() {
   // Força busca direta por IDs
   const pedidosEncontrados = [];
   idsCheckboxes.forEach(idCheckbox => {
-    const pedidoEncontrado = PEDIDOS.find(p => {
+    const pedidoEncontrado = FILTRADOS.find(p => {
       return String(p.orderId) === idCheckbox || String(p.id) === idCheckbox;
     });
     
