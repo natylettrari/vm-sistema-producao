@@ -758,7 +758,7 @@ function renderTabela(pedidos) {
     const dataExib = (parts[0]&&parts[1] ? parts[0]+'/'+parts[1] : (p.dataEnvio||'—')) + (mostrarAno ? ` <span style="font-size:9px;background:#f0ecf7;color:var(--lilac);padding:1px 3px;border-radius:3px">${anoEnvio}</span>` : '');
     const duExib = (p.diasUteisRestantes!==null&&p.diasUteisRestantes!==undefined) ? `<div style="font-size:9px;color:${p.diasUteisRestantes<3?'#c0392b':p.diasUteisRestantes<7?'#8a6400':'var(--text3)'}">${p.diasUteisRestantes<0?'Atrasado':p.diasUteisRestantes+'du'}</div>` : '';
     return `<tr class="${p.isUrgente?'urgente-row':''}">
-      <td style="width:28px"><input type="checkbox" class="rcb" data-id="${p.id}"></td>
+      <td style="width:28px"><input type="checkbox" class="rcb" data-id="${p.orderId || p.id}"></td>
       <td style="width:85px" class="num">${p.numero}${p.isDraft?'<span class="draft-pill">D</span>':''}${p.isKitItem?'<span class="kit-pill">Kit</span>':''}${p.foiEditado?'<span class="edit-badge">Ed.</span>':''}${p.listaNumero?`<span class="lista-pill">#${p.listaNumero}</span>`:''}</td>
       <td style="width:65px;font-size:11px;color:var(--text3)">${p.dataPedido||'—'}</td>
       <td style="width:120px;font-weight:500;font-size:12px">${p.modeloBase}</td>
