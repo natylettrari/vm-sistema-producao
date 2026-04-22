@@ -1812,7 +1812,7 @@ async function salvarListaProducao(pedIds, titulo, dataEnvio, peds) {
     
     // Força re-render completo para garantir que as mudanças apareçam
     // Forçar atualização do array FILTRADOS para refletir as mudanças de status
-    aplicarFiltros();
+    filtrar(); // Esta é a função correta que existe no código
     setTimeout(() => {
       filtrar(); // Re-aplica filtros para atualizar a visualização
       atualizarStats(); // Atualiza estatísticas novamente
