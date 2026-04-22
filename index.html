@@ -3014,3 +3014,121 @@ function abrirImpressaoSimples(pedidos, nomeLista) {
 </script>
 </body>
 </html>
+<script>
+// ===== NOVO FLUXO SEPARADO =====
+// Substitui função problemática com versão simples
+function criarListaDefinitiva() {
+  const checkboxesMarcados = document.querySelectorAll('.lrcb:checked');
+  
+  if (checkboxesMarcados.length === 0) {
+    toast('❌ Marque os pedidos que deseja incluir na lista');
+    return;
+  }
+
+  const pedidosSelecionados = [];
+  checkboxesMarcados.forEach(checkbox => {
+    const pedidoId = checkbox.getAttribute('data-id');
+    const pedido = FILTRADOS.find(p => String(p.orderId || p.id) === pedidoId);
+    if (pedido) {
+      pedidosSelecionados.push(pedido);
+    }
+  });
+
+  if (pedidosSelecionados.length === 0) {
+    toast('❌ Nenhum pedido válido encontrado');
+    return;
+  }
+
+  const numeroLista = LISTAS.length + 1;
+  const modelos = [...new Set(pedidosSelecionados.map(p => p.modeloBase))];
+  const modelosStr = modelos.slice(0,3).join(', ') + (modelos.length > 3 ? ` +${modelos.length-3}` : '');
+  
+  const novaLista = {
+    id: numeroLista,
+    numero: numeroLista,
+    nome: `Lista #${numeroLista} — ${modelosStr}`,
+    pedidos: pedidosSelecionados,
+    dataEnvio: LOTE_SEL,
+    totalPecas: pedidosSelecionados.length,
+    dataCriacao: new Date().toLocaleDateString('pt-BR'),
+    status: 'criada'
+  };
+
+  LISTAS.push(novaLista);
+  toast(`✅ Lista #${numeroLista} criada com ${pedidosSelecionados.length} pedidos!`);
+  mostrarModalFluxo(novaLista);
+}
+
+function mostrarModalFluxo(lista) {
+  const modal = document.createElement('div');
+  modal.className = 'cal-modal';
+  modal.id = 'modal-fluxo';
+  modal.innerHTML = `
+    <div class="cal-modal-box" style="text-align:center;max-width:450px">
+      <div style="font-size:32px;margin-bottom:16px">📋</div>
+      <h3 style="color:var(--rose);margin-bottom:8px">${lista.nome}</h3>
+      <p style="color:var(--text2);margin-bottom:20px">
+        ${lista.totalPecas} pedidos criados com sucesso!
+      </p>
+      
+      <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:20px">
+        <button class="btn" onclick="confirmarListaFluxo(${lista.id})" 
+                style="background:var(--green);color:white;border:none">
+          ✅ CONFIRMAR LISTA
+        </button>
+        <button class="btn btn-outline" onclick="criarPDFFluxo(${lista.id})">
+          📄 CRIAR PDF PARA IMPRIMIR
+        </button>
+        <button class="btn btn-outline" onclick="marcarProducaoFluxo(${lista.id})">
+          🏭 MARCAR PEDIDOS EM PRODUÇÃO
+        </button>
+      </div>
+      
+      <button class="btn btn-sm" onclick="fecharModalFluxo()" style="background:#ccc">
+        Fechar
+      </button>
+    </div>
+  `;
+  document.body.appendChild(modal);
+}
+
+function confirmarListaFluxo(listaId) {
+  const lista = LISTAS.find(l => l.id === listaId);
+  lista.status = 'confirmada';
+  toast('✅ Lista confirmada!');
+  fecharModalFluxo();
+}
+
+function criarPDFFluxo(listaId) {
+  const lista = LISTAS.find(l => l.id === listaId);
+  abrirImpressaoLimpa(lista.pedidos, lista.nome);
+  fecharModalFluxo();
+}
+
+function marcarProducaoFluxo(listaId) {
+  const lista = LISTAS.find(l => l.id === listaId);
+  let marcados = 0;
+  
+  lista.pedidos.forEach(pedido => {
+    if (['aguardando', 'atrasado'].includes(pedido.status)) {
+      pedido.status = 'em_producao';
+      marcados++;
+      
+      const original = PEDIDOS.find(p => (p.orderId || p.id) === (pedido.orderId || pedido.id));
+      if (original) original.status = 'em_producao';
+    }
+  });
+
+  lista.status = 'em_producao';
+  renderTabela(FILTRADOS);
+  filtrar();
+  
+  toast(`✅ ${marcados} pedidos em produção!`);
+  fecharModalFluxo();
+}
+
+function fecharModalFluxo() {
+  const modal = document.getElementById('modal-fluxo');
+  if (modal) modal.remove();
+}
+</script>
