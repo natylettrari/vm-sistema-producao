@@ -3015,8 +3015,7 @@ function abrirImpressaoSimples(pedidos, nomeLista) {
 </body>
 </html>
 <script>
-// ===== NOVO FLUXO SEPARADO =====
-// Substitui função problemática com versão simples
+// SUBSTITUIR a função problemática por versão que funciona corretamente
 function criarListaDefinitiva() {
   const checkboxesMarcados = document.querySelectorAll('.lrcb:checked');
   
@@ -3025,110 +3024,149 @@ function criarListaDefinitiva() {
     return;
   }
 
-  const pedidosSelecionados = [];
+  // PEGA DADOS DIRETO DA LINHA MARCADA (não por ID que se confunde)
+  const produtosCorretos = [];
+  
   checkboxesMarcados.forEach(checkbox => {
-    const pedidoId = checkbox.getAttribute('data-id');
-    const pedido = FILTRADOS.find(p => String(p.orderId || p.id) === pedidoId);
-    if (pedido) {
-      pedidosSelecionados.push(pedido);
+    const linha = checkbox.closest('tr');
+    if (linha) {
+      const cells = linha.querySelectorAll('td');
+      if (cells.length >= 8) {
+        produtosCorretos.push({
+          numero: cells[1].textContent.trim(),
+          modeloBase: cells[2].textContent.trim(),
+          colecaoCor: cells[3].textContent.trim(),
+          bordado: cells[4].textContent.trim(),
+          vendedora: cells[5].textContent.trim(),
+          envio: cells[6].textContent.trim(),
+          status: cells[7].textContent.trim(),
+          id: Date.now() + Math.random()
+        });
+      }
     }
   });
 
-  if (pedidosSelecionados.length === 0) {
-    toast('❌ Nenhum pedido válido encontrado');
+  if (produtosCorretos.length === 0) {
+    alert('Erro ao coletar produtos');
     return;
   }
 
+  // Lista criada com produtos CORRETOS
   const numeroLista = LISTAS.length + 1;
-  const modelos = [...new Set(pedidosSelecionados.map(p => p.modeloBase))];
-  const modelosStr = modelos.slice(0,3).join(', ') + (modelos.length > 3 ? ` +${modelos.length-3}` : '');
+  const modelos = [...new Set(produtosCorretos.map(p => p.modeloBase))];
+  const modelosStr = modelos.join(', ');
   
-  const novaLista = {
+  const lista = {
     id: numeroLista,
     numero: numeroLista,
     nome: `Lista #${numeroLista} — ${modelosStr}`,
-    pedidos: pedidosSelecionados,
-    dataEnvio: LOTE_SEL,
-    totalPecas: pedidosSelecionados.length,
-    dataCriacao: new Date().toLocaleDateString('pt-BR'),
-    status: 'criada'
+    produtos: produtosCorretos,
+    totalPecas: produtosCorretos.length,
+    dataCriacao: new Date().toLocaleDateString('pt-BR')
   };
 
-  LISTAS.push(novaLista);
-  toast(`✅ Lista #${numeroLista} criada com ${pedidosSelecionados.length} pedidos!`);
-  mostrarModalFluxo(novaLista);
+  LISTAS.push(lista);
+  
+  // Modal fixo que não some
+  mostrarModalFixo(lista);
 }
 
-function mostrarModalFluxo(lista) {
+function mostrarModalFixo(lista) {
+  // Remove anterior
+  const anterior = document.getElementById('modal-fixo');
+  if (anterior) anterior.remove();
+
   const modal = document.createElement('div');
-  modal.className = 'cal-modal';
-  modal.id = 'modal-fluxo';
-  modal.innerHTML = `
-    <div class="cal-modal-box" style="text-align:center;max-width:450px">
-      <div style="font-size:32px;margin-bottom:16px">📋</div>
-      <h3 style="color:var(--rose);margin-bottom:8px">${lista.nome}</h3>
-      <p style="color:var(--text2);margin-bottom:20px">
-        ${lista.totalPecas} pedidos criados com sucesso!
-      </p>
-      
-      <div style="display:flex;flex-direction:column;gap:12px;margin-bottom:20px">
-        <button class="btn" onclick="confirmarListaFluxo(${lista.id})" 
-                style="background:var(--green);color:white;border:none">
-          ✅ CONFIRMAR LISTA
-        </button>
-        <button class="btn btn-outline" onclick="criarPDFFluxo(${lista.id})">
-          📄 CRIAR PDF PARA IMPRIMIR
-        </button>
-        <button class="btn btn-outline" onclick="marcarProducaoFluxo(${lista.id})">
-          🏭 MARCAR PEDIDOS EM PRODUÇÃO
-        </button>
-      </div>
-      
-      <button class="btn btn-sm" onclick="fecharModalFluxo()" style="background:#ccc">
-        Fechar
-      </button>
-    </div>
+  modal.id = 'modal-fixo';
+  modal.style.cssText = `
+    position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    background: white; border: 2px solid #8A4C52; border-radius: 8px;
+    padding: 20px; box-shadow: 0 4px 20px rgba(0,0,0,0.3);
+    z-index: 10000; min-width: 400px; text-align: center;
   `;
+  
+  modal.innerHTML = `
+    <h3 style="color:#8A4C52;margin:0 0 15px 0">${lista.nome}</h3>
+    <p style="margin:0 0 20px 0">${lista.totalPecas} produtos selecionados</p>
+    
+    <button onclick="imprimirCorreto(${lista.id})" 
+            style="display:block;width:100%;margin:10px 0;padding:10px;background:#007bff;color:white;border:none;border-radius:4px;cursor:pointer">
+      📄 IMPRIMIR LISTA CORRETA
+    </button>
+    
+    <button onclick="marcarProducao(${lista.id})" 
+            style="display:block;width:100%;margin:10px 0;padding:10px;background:#28a745;color:white;border:none;border-radius:4px;cursor:pointer">
+      🏭 MARCAR PRODUÇÃO
+    </button>
+    
+    <button onclick="fecharModalFixo()" 
+            style="display:block;width:100%;margin:15px 0 0 0;padding:8px;background:#ccc;color:#333;border:none;border-radius:4px;cursor:pointer">
+      Fechar
+    </button>
+  `;
+  
   document.body.appendChild(modal);
 }
 
-function confirmarListaFluxo(listaId) {
+function imprimirCorreto(listaId) {
   const lista = LISTAS.find(l => l.id === listaId);
-  lista.status = 'confirmada';
-  toast('✅ Lista confirmada!');
-  fecharModalFluxo();
+  
+  const novaAba = window.open('', '_blank');
+  novaAba.document.write(`
+    <html>
+      <head><title>Lista #${lista.numero}</title></head>
+      <body style="font-family:Arial;margin:20px">
+        <h1 style="color:#8A4C52;text-align:center">Vilma Mirian — Produção</h1>
+        <p style="text-align:center;margin:15px 0">${lista.nome} • ${lista.totalPecas} produtos</p>
+        
+        <table style="width:100%;border-collapse:collapse;margin-top:20px">
+          <tr style="background:#f8f9fa">
+            <th style="border:1px solid #ddd;padding:8px">Pedido</th>
+            <th style="border:1px solid #ddd;padding:8px">Modelo</th>
+            <th style="border:1px solid #ddd;padding:8px">Cor</th>
+            <th style="border:1px solid #ddd;padding:8px">Bordado</th>
+            <th style="border:1px solid #ddd;padding:8px">Vendedora</th>
+          </tr>
+          ${lista.produtos.map(p => `
+            <tr>
+              <td style="border:1px solid #ddd;padding:8px">${p.numero}</td>
+              <td style="border:1px solid #ddd;padding:8px">${p.modeloBase}</td>
+              <td style="border:1px solid #ddd;padding:8px">${p.colecaoCor}</td>
+              <td style="border:1px solid #ddd;padding:8px">${p.bordado || 'Sem bordado'}</td>
+              <td style="border:1px solid #ddd;padding:8px">${p.vendedora}</td>
+            </tr>
+          `).join('')}
+        </table>
+        
+        <div style="text-align:center;margin:20px 0">
+          <button onclick="window.print()" style="background:#8A4C52;color:white;border:none;padding:10px 20px;margin:5px">Imprimir</button>
+          <button onclick="window.close()" style="background:#666;color:white;border:none;padding:10px 20px;margin:5px">Fechar</button>
+        </div>
+      </body>
+    </html>
+  `);
+  novaAba.document.close();
 }
 
-function criarPDFFluxo(listaId) {
-  const lista = LISTAS.find(l => l.id === listaId);
-  abrirImpressaoLimpa(lista.pedidos, lista.nome);
-  fecharModalFluxo();
-}
-
-function marcarProducaoFluxo(listaId) {
+function marcarProducao(listaId) {
   const lista = LISTAS.find(l => l.id === listaId);
   let marcados = 0;
   
-  lista.pedidos.forEach(pedido => {
-    if (['aguardando', 'atrasado'].includes(pedido.status)) {
-      pedido.status = 'em_producao';
-      marcados++;
-      
-      const original = PEDIDOS.find(p => (p.orderId || p.id) === (pedido.orderId || pedido.id));
-      if (original) original.status = 'em_producao';
-    }
+  // Marca cada produto da lista como em produção
+  lista.produtos.forEach(produto => {
+    produto.status = 'em_producao';
+    marcados++;
   });
-
-  lista.status = 'em_producao';
-  renderTabela(FILTRADOS);
-  filtrar();
   
-  toast(`✅ ${marcados} pedidos em produção!`);
-  fecharModalFluxo();
+  alert(`✅ ${marcados} produtos marcados como "Em Produção"!`);
+  fecharModalFixo();
+  
+  // Atualiza visualmente (se quiser)
+  setTimeout(() => location.reload(), 500);
 }
 
-function fecharModalFluxo() {
-  const modal = document.getElementById('modal-fluxo');
+function fecharModalFixo() {
+  const modal = document.getElementById('modal-fixo');
   if (modal) modal.remove();
 }
 </script>
