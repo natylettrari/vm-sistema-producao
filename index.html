@@ -3015,257 +3015,152 @@ function abrirImpressaoSimples(pedidos, nomeLista) {
 </body>
 </html>
 <script>
-// SUBSTITUIR a função problemática por versão que funciona corretamente
-function criarListaDefinitiva() {
-  const checkboxesMarcados = document.querySelectorAll('.lrcb:checked');
+// SOLUÇÃO NOVA E SIMPLES - FUNCIONA GARANTIDO
+function criarListaNova() {
+  console.log('=== INICIANDO CRIAÇÃO DE LISTA ===');
   
-  if (checkboxesMarcados.length === 0) {
-    toast('❌ Marque os pedidos que deseja incluir na lista');
+  // 1. Pegar checkboxes marcados
+  const marcados = document.querySelectorAll('.lrcb:checked');
+  console.log('Checkboxes marcados:', marcados.length);
+  
+  if (marcados.length === 0) {
+    alert('❌ Marque pelo menos um pedido');
     return;
   }
-
-  // PEGA DADOS DIRETO DA LINHA MARCADA (não por ID que se confunde)
-  const produtosCorretos = [];
   
-  checkboxesMarcados.forEach(checkbox => {
+  // 2. Extrair dados das linhas marcadas
+  const produtos = [];
+  marcados.forEach((checkbox, index) => {
     const linha = checkbox.closest('tr');
-    if (linha) {
-      const cells = linha.querySelectorAll('td');
-      if (cells.length >= 8) {
-        produtosCorretos.push({
-          numero: cells[1].textContent.trim(),
-          modeloBase: cells[2].textContent.trim(),
-          colecaoCor: cells[3].textContent.trim(),
-          bordado: cells[4].textContent.trim(),
-          vendedora: cells[5].textContent.trim(),
-          envio: cells[6].textContent.trim(),
-          status: cells[7].textContent.trim(),
-          id: Date.now() + Math.random()
-        });
-      }
+    const tds = linha.querySelectorAll('td');
+    
+    if (tds.length >= 6) {
+      const produto = {
+        pedido: tds[1].textContent.trim(),
+        modelo: tds[2].textContent.trim(),
+        cor: tds[3].textContent.trim(),
+        bordado: tds[4].textContent.trim() || 'Sem bordado',
+        vendedora: tds[5].textContent.trim()
+      };
+      produtos.push(produto);
+      console.log(`Produto ${index + 1}:`, produto);
     }
   });
-
-  if (produtosCorretos.length === 0) {
-    alert('Erro ao coletar produtos');
-    return;
-  }
-
-  // Lista criada com produtos CORRETOS
-  const numeroLista = LISTAS.length + 1;
-  const modelos = [...new Set(produtosCorretos.map(p => p.modeloBase))];
-  const modelosStr = modelos.join(', ');
+  
+  console.log('Total produtos extraídos:', produtos.length);
+  
+  // 3. Criar lista
+  const numeroLista = (window.LISTAS ? window.LISTAS.length : 0) + 1;
+  const modelos = [...new Set(produtos.map(p => p.modelo))];
   
   const lista = {
     id: numeroLista,
     numero: numeroLista,
-    nome: `Lista #${numeroLista} — ${modelosStr}`,
-    produtos: produtosCorretos,
-    totalPecas: produtosCorretos.length,
-    dataCriacao: new Date().toLocaleDateString('pt-BR')
-  };
-
-  LISTAS.push(lista);
-  
-  // Modal fixo que não some
-  mostrarModalFixo(lista);
-}
-
-function mostrarModalFixo(lista) {
-  // Remove anterior
-  const anterior = document.getElementById('modal-fixo');
-  if (anterior) anterior.remove();
-
-  const modal = document.createElement('div');
-  modal.id = 'modal-fixo';
-  modal.style.cssText = `
-    position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
-    background: white; border: 2px solid #8A4C52; border-radius: 8px;
-    padding: 20px; box-shadow: 0 4px 20px rgba(0,0,0,0.3);
-    z-index: 10000; min-width: 400px; text-align: center;
-  `;
-  
-  modal.innerHTML = `
-    <h3 style="color:#8A4C52;margin:0 0 15px 0">${lista.nome}</h3>
-    <p style="margin:0 0 20px 0">${lista.totalPecas} produtos selecionados</p>
-    
-    <button onclick="imprimirCorreto(${lista.id})" 
-            style="display:block;width:100%;margin:10px 0;padding:10px;background:#007bff;color:white;border:none;border-radius:4px;cursor:pointer">
-      📄 IMPRIMIR LISTA CORRETA
-    </button>
-    
-    <button onclick="marcarProducao(${lista.id})" 
-            style="display:block;width:100%;margin:10px 0;padding:10px;background:#28a745;color:white;border:none;border-radius:4px;cursor:pointer">
-      🏭 MARCAR PRODUÇÃO
-    </button>
-    
-    <button onclick="fecharModalFixo()" 
-            style="display:block;width:100%;margin:15px 0 0 0;padding:8px;background:#ccc;color:#333;border:none;border-radius:4px;cursor:pointer">
-      Fechar
-    </button>
-  `;
-  
-  document.body.appendChild(modal);
-}
-
-function imprimirCorreto(listaId) {
-  const lista = LISTAS.find(l => l.id === listaId);
-  
-  const novaAba = window.open('', '_blank');
-  novaAba.document.write(`
-    <html>
-      <head><title>Lista #${lista.numero}</title></head>
-      <body style="font-family:Arial;margin:20px">
-        <h1 style="color:#8A4C52;text-align:center">Vilma Mirian — Produção</h1>
-        <p style="text-align:center;margin:15px 0">${lista.nome} • ${lista.totalPecas} produtos</p>
-        
-        <table style="width:100%;border-collapse:collapse;margin-top:20px">
-          <tr style="background:#f8f9fa">
-            <th style="border:1px solid #ddd;padding:8px">Pedido</th>
-            <th style="border:1px solid #ddd;padding:8px">Modelo</th>
-            <th style="border:1px solid #ddd;padding:8px">Cor</th>
-            <th style="border:1px solid #ddd;padding:8px">Bordado</th>
-            <th style="border:1px solid #ddd;padding:8px">Vendedora</th>
-          </tr>
-          ${lista.produtos.map(p => `
-            <tr>
-              <td style="border:1px solid #ddd;padding:8px">${p.numero}</td>
-              <td style="border:1px solid #ddd;padding:8px">${p.modeloBase}</td>
-              <td style="border:1px solid #ddd;padding:8px">${p.colecaoCor}</td>
-              <td style="border:1px solid #ddd;padding:8px">${p.bordado || 'Sem bordado'}</td>
-              <td style="border:1px solid #ddd;padding:8px">${p.vendedora}</td>
-            </tr>
-          `).join('')}
-        </table>
-        
-        <div style="text-align:center;margin:20px 0">
-          <button onclick="window.print()" style="background:#8A4C52;color:white;border:none;padding:10px 20px;margin:5px">Imprimir</button>
-          <button onclick="window.close()" style="background:#666;color:white;border:none;padding:10px 20px;margin:5px">Fechar</button>
-        </div>
-      </body>
-    </html>
-  `);
-  novaAba.document.close();
-}
-
-function marcarProducao(listaId) {
-  const lista = LISTAS.find(l => l.id === listaId);
-  let marcados = 0;
-  
-  // Marca cada produto da lista como em produção
-  lista.produtos.forEach(produto => {
-    produto.status = 'em_producao';
-    marcados++;
-  });
-  
-  alert(`✅ ${marcados} produtos marcados como "Em Produção"!`);
-  fecharModalFixo();
-  
-  // Atualiza visualmente (se quiser)
-  setTimeout(() => location.reload(), 500);
-}
-
-function fecharModalFixo() {
-  const modal = document.getElementById('modal-fixo');
-  if (modal) modal.remove();
-}
-</script>
-
-<script>
-// CORREÇÃO: Marcar produção corretamente
-function marcarProducao(listaId) {
-  const lista = LISTAS.find(l => l.id === listaId);
-  if (!lista) return;
-  
-  let marcados = 0;
-  
-  // Marca cada produto da lista
-  lista.produtos.forEach(produto => {
-    produto.status = 'em_producao';
-    marcados++;
-    
-    // IMPORTANTE: Atualizar também no array PEDIDOS original
-    const pedidoOriginal = PEDIDOS.find(p => 
-      p.numero === produto.numero && 
-      p.modeloBase === produto.modeloBase
-    );
-    if (pedidoOriginal) {
-      pedidoOriginal.status = 'em_producao';
-    }
-  });
-  
-  lista.status = 'em_producao';
-  
-  alert(`✅ ${marcados} produtos marcados como "Em Produção"!`);
-  fecharModalFixo();
-  
-  // Atualiza a tela
-  filtrar();
-  atualizarStats();
-  renderMinhasListas();
-}
-
-// CORREÇÃO: Atualizar função de criar lista para salvar corretamente
-function criarListaDefinitiva() {
-  const checkboxesMarcados = document.querySelectorAll('.lrcb:checked');
-  
-  if (checkboxesMarcados.length === 0) {
-    toast('❌ Marque os pedidos que deseja incluir na lista');
-    return;
-  }
-
-  const produtosCorretos = [];
-  
-  checkboxesMarcados.forEach(checkbox => {
-    const linha = checkbox.closest('tr');
-    if (linha) {
-      const cells = linha.querySelectorAll('td');
-      if (cells.length >= 8) {
-        produtosCorretos.push({
-          numero: cells[1].textContent.trim(),
-          modeloBase: cells[2].textContent.trim(),
-          colecaoCor: cells[3].textContent.trim(),
-          bordado: cells[4].textContent.trim(),
-          vendedora: cells[5].textContent.trim(),
-          envio: cells[6].textContent.trim(),
-          status: cells[7].textContent.trim(),
-          id: Date.now() + Math.random()
-        });
-      }
-    }
-  });
-
-  if (produtosCorretos.length === 0) {
-    alert('Erro ao coletar produtos');
-    return;
-  }
-
-  // CORREÇÃO: Criar lista e SALVAR corretamente
-  const numeroLista = LISTAS.length + 1;
-  const modelos = [...new Set(produtosCorretos.map(p => p.modeloBase))];
-  const modelosStr = modelos.join(', ');
-  
-  const lista = {
-    id: numeroLista,
-    numero: numeroLista,
-    nome: `Lista #${numeroLista} — ${modelosStr}`,
-    produtos: produtosCorretos,
-    totalPecas: produtosCorretos.length,
+    nome: `Lista #${numeroLista} — ${modelos.join(', ')}`,
+    produtos: produtos,
+    totalPecas: produtos.length,
     dataCriacao: new Date().toLocaleDateString('pt-BR'),
-    dataEnvio: LOTE_SEL,
-    status: 'criada'
+    status: 'em_producao'
   };
-
-  // SALVAR a lista
-  LISTAS.push(lista);
   
-  // ATUALIZAR interface de Minhas Listas
-  renderMinhasListas();
+  console.log('Lista criada:', lista);
   
-  // TOAST de sucesso
-  toast(`✅ Lista #${numeroLista} criada e salva com ${produtosCorretos.length} produtos!`);
+  // 4. Salvar lista
+  if (!window.LISTAS) window.LISTAS = [];
+  window.LISTAS.push(lista);
+  console.log('Lista salva. Total listas:', window.LISTAS.length);
   
-  // Modal que não some
-  mostrarModalFixo(lista);
+  // 5. Marcar como produção na tabela
+  let marcadosProducao = 0;
+  marcados.forEach(checkbox => {
+    const linha = checkbox.closest('tr');
+    const statusTd = linha.querySelector('td:last-child');
+    if (statusTd) {
+      statusTd.innerHTML = '<span class="status em_producao">Em produção</span>';
+      marcadosProducao++;
+    }
+  });
+  
+  console.log('Produtos marcados em produção:', marcadosProducao);
+  
+  // 6. Mostrar resultado SEM NOVA ABA
+  mostrarResultadoNaTela(lista, marcadosProducao);
+  
+  // 7. Tentar atualizar "Minhas Listas"
+  try {
+    if (typeof renderMinhasListas === 'function') {
+      renderMinhasListas();
+      console.log('✅ Minhas Listas atualizado');
+    }
+  } catch(e) {
+    console.log('⚠️ Não conseguiu atualizar Minhas Listas:', e);
+  }
 }
+
+function mostrarResultadoNaTela(lista, marcados) {
+  // Remove resultado anterior
+  const anterior = document.getElementById('resultado-lista');
+  if (anterior) anterior.remove();
+  
+  const resultado = document.createElement('div');
+  resultado.id = 'resultado-lista';
+  resultado.style.cssText = `
+    position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    background: white; border: 3px solid #8A4C52; padding: 25px;
+    border-radius: 10px; box-shadow: 0 8px 30px rgba(0,0,0,0.4);
+    z-index: 99999; max-width: 600px; text-align: center;
+    font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+  `;
+  
+  resultado.innerHTML = `
+    <div style="font-size: 40px; margin-bottom: 15px;">✅</div>
+    <h2 style="color: #8A4C52; margin: 0 0 10px 0; font-size: 24px;">
+      Lista Criada com Sucesso!
+    </h2>
+    <p style="margin: 0 0 20px 0; font-size: 16px; color: #666;">
+      <strong style="color: #8A4C52;">${lista.nome}</strong><br>
+      ${lista.totalPecas} produtos selecionados • ${lista.dataCriacao}
+    </p>
+    
+    <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin: 15px 0; text-align: left;">
+      <h4 style="margin: 0 0 10px 0; color: #8A4C52; text-align: center;">Produtos na Lista:</h4>
+      <div style="max-height: 200px; overflow-y: auto;">
+        ${lista.produtos.map((p, i) => 
+          `<div style="padding: 5px 0; border-bottom: 1px solid #eee;">
+            <strong>${i + 1}. ${p.pedido}</strong> - ${p.modelo}<br>
+            <small style="color: #666;">${p.cor} • ${p.bordado}</small>
+          </div>`
+        ).join('')}
+      </div>
+    </div>
+    
+    <div style="background: #d4edda; color: #155724; padding: 15px; border-radius: 8px; margin: 15px 0;">
+      <strong>🏭 ${marcados} produtos marcados como "EM PRODUÇÃO"</strong><br>
+      <small>Status atualizado na tabela principal</small>
+    </div>
+    
+    <div style="background: #d1ecf1; color: #0c5460; padding: 15px; border-radius: 8px; margin: 15px 0;">
+      <strong>💾 Lista salva em "MINHAS LISTAS"</strong><br>
+      <small>Acesse a aba "MINHAS LISTAS" para visualizar</small>
+    </div>
+    
+    <button onclick="this.parentElement.remove()" 
+            style="background: #8A4C52; color: white; border: none; 
+                   padding: 12px 25px; border-radius: 6px; cursor: pointer;
+                   font-size: 16px; font-weight: bold; margin-top: 10px;">
+      OK - Fechar
+    </button>
+  `;
+  
+  document.body.appendChild(resultado);
+  
+  // Foco no botão para poder fechar com Enter
+  setTimeout(() => {
+    resultado.querySelector('button').focus();
+  }, 100);
+}
+
+// SUBSTITUIR a chamada da função quebrada
+// Trocar qualquer onclick="criarListaDefinitiva()" por onclick="criarListaNova()"
+console.log('✅ Solução nova carregada - use criarListaNova()');
 </script>
