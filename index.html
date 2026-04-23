@@ -3170,3 +3170,102 @@ function fecharModalFixo() {
   if (modal) modal.remove();
 }
 </script>
+
+<script>
+// CORREÇÃO: Marcar produção corretamente
+function marcarProducao(listaId) {
+  const lista = LISTAS.find(l => l.id === listaId);
+  if (!lista) return;
+  
+  let marcados = 0;
+  
+  // Marca cada produto da lista
+  lista.produtos.forEach(produto => {
+    produto.status = 'em_producao';
+    marcados++;
+    
+    // IMPORTANTE: Atualizar também no array PEDIDOS original
+    const pedidoOriginal = PEDIDOS.find(p => 
+      p.numero === produto.numero && 
+      p.modeloBase === produto.modeloBase
+    );
+    if (pedidoOriginal) {
+      pedidoOriginal.status = 'em_producao';
+    }
+  });
+  
+  lista.status = 'em_producao';
+  
+  alert(`✅ ${marcados} produtos marcados como "Em Produção"!`);
+  fecharModalFixo();
+  
+  // Atualiza a tela
+  filtrar();
+  atualizarStats();
+  renderMinhasListas();
+}
+
+// CORREÇÃO: Atualizar função de criar lista para salvar corretamente
+function criarListaDefinitiva() {
+  const checkboxesMarcados = document.querySelectorAll('.lrcb:checked');
+  
+  if (checkboxesMarcados.length === 0) {
+    toast('❌ Marque os pedidos que deseja incluir na lista');
+    return;
+  }
+
+  const produtosCorretos = [];
+  
+  checkboxesMarcados.forEach(checkbox => {
+    const linha = checkbox.closest('tr');
+    if (linha) {
+      const cells = linha.querySelectorAll('td');
+      if (cells.length >= 8) {
+        produtosCorretos.push({
+          numero: cells[1].textContent.trim(),
+          modeloBase: cells[2].textContent.trim(),
+          colecaoCor: cells[3].textContent.trim(),
+          bordado: cells[4].textContent.trim(),
+          vendedora: cells[5].textContent.trim(),
+          envio: cells[6].textContent.trim(),
+          status: cells[7].textContent.trim(),
+          id: Date.now() + Math.random()
+        });
+      }
+    }
+  });
+
+  if (produtosCorretos.length === 0) {
+    alert('Erro ao coletar produtos');
+    return;
+  }
+
+  // CORREÇÃO: Criar lista e SALVAR corretamente
+  const numeroLista = LISTAS.length + 1;
+  const modelos = [...new Set(produtosCorretos.map(p => p.modeloBase))];
+  const modelosStr = modelos.join(', ');
+  
+  const lista = {
+    id: numeroLista,
+    numero: numeroLista,
+    nome: `Lista #${numeroLista} — ${modelosStr}`,
+    produtos: produtosCorretos,
+    totalPecas: produtosCorretos.length,
+    dataCriacao: new Date().toLocaleDateString('pt-BR'),
+    dataEnvio: LOTE_SEL,
+    status: 'criada'
+  };
+
+  // SALVAR a lista
+  LISTAS.push(lista);
+  
+  // ATUALIZAR interface de Minhas Listas
+  renderMinhasListas();
+  
+  // TOAST de sucesso
+  toast(`✅ Lista #${numeroLista} criada e salva com ${produtosCorretos.length} produtos!`);
+  
+  // Modal que não some
+  mostrarModalFixo(lista);
+}
+</script>
