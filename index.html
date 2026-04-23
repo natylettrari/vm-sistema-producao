@@ -3030,22 +3030,32 @@ document.addEventListener('DOMContentLoaded', function() {
       
       console.log('✅ Checkboxes marcados:', marcados.length);
       
-      // Extrai dados SIMPLES
+      // Extrai dados CORRETAMENTE
       const produtos = [];
+      const pedidosParaImprimir = [];
+      
       marcados.forEach((cb, i) => {
         const linha = cb.closest('tr');
         const colunas = linha.querySelectorAll('td');
         
         if (colunas.length >= 6) {
+          const pedidoNumero = colunas[1].textContent.trim().replace('#', '');
+          
           const produto = {
-            pedido: colunas[1].textContent.trim(),
+            pedido: pedidoNumero,
+            numero: pedidoNumero, // Para compatibilidade
             modelo: colunas[2].textContent.trim(),
             cor: colunas[3].textContent.trim(),
             bordado: colunas[4].textContent.trim() || 'Sem bordado',
-            vendedora: colunas[5].textContent.trim()
+            vendedora: colunas[5].textContent.trim(),
+            modeloBase: colunas[2].textContent.trim(),
+            colecaoCor: colunas[3].textContent.trim()
           };
+          
           produtos.push(produto);
-          console.log(`${i+1}. ${produto.pedido} - ${produto.modelo}`);
+          pedidosParaImprimir.push(produto);
+          
+          console.log(`${i+1}. #${pedidoNumero} - ${produto.modelo}`);
         }
       });
       
@@ -3070,6 +3080,11 @@ document.addEventListener('DOMContentLoaded', function() {
       // SALVAR na memória
       if (!window.LISTAS) window.LISTAS = [];
       window.LISTAS.push(lista);
+      
+      // GUARDAR para impressão
+      window._ULTIMA_LISTA = lista;
+      window._PRODUTOS_IMPRESSAO = pedidosParaImprimir;
+      
       console.log('💾 Lista salva! Total listas:', window.LISTAS.length);
       
       // PERSISTIR STATUS nos dados dos pedidos
@@ -3087,14 +3102,24 @@ document.addEventListener('DOMContentLoaded', function() {
         // IMPORTANTE: Atualiza o status nos dados também
         const dataId = cb.getAttribute('data-id');
         if (dataId && window.PEDIDOS) {
-          const pedido = window.PEDIDOS.find(p => 
-            String(p.id) === String(dataId) || 
-            String(p.orderId) === String(dataId) ||
-            String(p.orderId || p.id) === String(dataId)
-          );
-          if (pedido) {
-            pedido.status = 'em_producao';
-            console.log('✅ Status persistido para:', pedido.numero);
+          // Tenta diferentes formas de encontrar o pedido
+          let pedidoEncontrado = null;
+          
+          for (let pedido of window.PEDIDOS) {
+            if (String(pedido.id) === String(dataId) || 
+                String(pedido.orderId) === String(dataId) ||
+                String(pedido.orderId || pedido.id) === String(dataId) ||
+                String(pedido.numero) === String(dataId)) {
+              pedidoEncontrado = pedido;
+              break;
+            }
+          }
+          
+          if (pedidoEncontrado) {
+            pedidoEncontrado.status = 'em_producao';
+            console.log('✅ Status persistido para:', pedidoEncontrado.numero);
+          } else {
+            console.log('⚠️ Pedido não encontrado para ID:', dataId);
           }
         }
       });
@@ -3189,17 +3214,86 @@ function mostrarSucessoSimples(totalProdutos, marcados) {
 
 // Funções dos botões do modal
 window.imprimirLista = function() {
-  // Usar a função de impressão que já existe no sistema
-  if (typeof abrirImpressaoLimpa === 'function') {
-    // Pega os produtos da última lista criada
-    const ultimaLista = window.LISTAS ? window.LISTAS[window.LISTAS.length - 1] : null;
-    if (ultimaLista) {
-      abrirImpressaoLimpa(ultimaLista.produtos);
+  console.log('🖨️ Iniciando impressão...');
+  
+  if (window._PRODUTOS_IMPRESSAO && window._PRODUTOS_IMPRESSAO.length > 0) {
+    // Usar a função de impressão que já existe no sistema
+    if (typeof abrirImpressaoLimpa === 'function') {
+      console.log('📦 Produtos para impressão:', window._PRODUTOS_IMPRESSAO.length);
+      abrirImpressaoLimpa(window._PRODUTOS_IMPRESSAO);
+    } else {
+      // Abrir impressão manual se a função não existir
+      abrirImpressaoManual(window._PRODUTOS_IMPRESSAO);
     }
   } else {
-    alert('🖨️ Função de impressão será implementada em breve!');
+    alert('❌ Nenhum produto encontrado para impressão');
   }
 };
+
+// Função de impressão manual como backup
+function abrirImpressaoManual(produtos) {
+  const novaAba = window.open('', '_blank');
+  if (!novaAba) {
+    alert('❌ Pop-up bloqueado! Permita pop-ups para imprimir.');
+    return;
+  }
+  
+  const html = `
+    <!DOCTYPE html>
+    <html><head><meta charset="UTF-8">
+    <title>Vilma Miriam — Produção</title>
+    <style>
+      body { font-family: Arial, sans-serif; margin: 20px; }
+      h1 { color: #8A4C52; text-align: center; }
+      table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+      th, td { border: 1px solid #ddd; padding: 8px; }
+      th { background: #f5f5f5; }
+      .pedido { font-weight: bold; color: #8A4C52; }
+    </style></head>
+    <body>
+      <h1>Vilma Miriam — Lista de Produção</h1>
+      <p><strong>${produtos.length} produtos</strong> • Gerado em ${new Date().toLocaleString('pt-BR')}</p>
+      
+      <table>
+        <thead>
+          <tr>
+            <th>Pedido</th>
+            <th>Modelo</th>
+            <th>Cor/Coleção</th>
+            <th>Bordado</th>
+            <th>Vendedora</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${produtos.map(p => `
+            <tr>
+              <td class="pedido">#${p.pedido || p.numero}</td>
+              <td>${p.modelo || p.modeloBase || '-'}</td>
+              <td>${p.cor || p.colecaoCor || '-'}</td>
+              <td>${p.bordado || 'Sem bordado'}</td>
+              <td>${p.vendedora || '-'}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+      
+      <div style="margin-top: 30px; text-align: center;">
+        <button onclick="window.print()" style="background: #8A4C52; color: white; border: none; 
+                padding: 12px 20px; border-radius: 6px; cursor: pointer; margin-right: 10px;">
+          🖨️ Imprimir
+        </button>
+        <button onclick="window.close()" style="background: #666; color: white; border: none; 
+                padding: 12px 20px; border-radius: 6px; cursor: pointer;">
+          ✕ Fechar
+        </button>
+      </div>
+    </body></html>
+  `;
+  
+  novaAba.document.write(html);
+  novaAba.document.close();
+  novaAba.focus();
+}
 
 window.verMinhasListas = function() {
   fecharModal();
