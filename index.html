@@ -3015,6 +3015,193 @@ function abrirImpressaoSimples(pedidos, nomeLista) {
 document.addEventListener('DOMContentLoaded', function() {
   console.log('🚀 Carregando versão que funciona...');
   
+  // FUNÇÃO PARA ORDENAR PEDIDOS POR NÚMERO (ORDEM CRONOLÓGICA)
+  function ordenarPedidosPorNumero(pedidos) {
+    return pedidos.sort((a, b) => {
+      // Extrai apenas os números dos pedidos para comparação
+      const numeroA = parseInt(String(a.numero || a.pedido || '0').replace(/[^\d]/g, '')) || 0;
+      const numeroB = parseInt(String(b.numero || b.pedido || '0').replace(/[^\d]/g, '')) || 0;
+      
+      // Ordena do menor para o maior (cronológica)
+      return numeroA - numeroB;
+    });
+  }
+  
+  // INTERCEPTA A RENDERIZAÇÃO DE TABELAS PARA APLICAR ORDENAÇÃO
+  const renderTabelaOriginal = window.renderTabela;
+  if (renderTabelaOriginal) {
+    window.renderTabela = function(pedidos, ...args) {
+      console.log('📊 Aplicando ordenação cronológica aos pedidos...');
+      
+      if (pedidos && Array.isArray(pedidos) && pedidos.length > 0) {
+        // Ordena os pedidos antes de renderizar
+        const pedidosOrdenados = ordenarPedidosPorNumero([...pedidos]); // Cria cópia para não modificar original
+        console.log(`✅ ${pedidosOrdenados.length} pedidos ordenados por número`);
+        
+        // Log dos primeiros e últimos para verificar ordem
+        if (pedidosOrdenados.length >= 2) {
+          const primeiro = pedidosOrdenados[0];
+          const ultimo = pedidosOrdenados[pedidosOrdenados.length - 1];
+          console.log(`📈 Ordem: #${primeiro.numero || primeiro.pedido} → #${ultimo.numero || ultimo.pedido}`);
+        }
+        
+        // Chama a função original com pedidos ordenados
+        return renderTabelaOriginal.call(this, pedidosOrdenados, ...args);
+      }
+      
+      // Se não há pedidos, chama função original normalmente
+      return renderTabelaOriginal.call(this, pedidos, ...args);
+    };
+    console.log('🔄 Interceptação de renderTabela instalada');
+  }
+  
+  // INTERCEPTA AGRUPAMENTOS TAMBÉM PARA MANTER ORDEM DENTRO DOS GRUPOS
+  const agruparOriginal = window.agrupar;
+  if (agruparOriginal) {
+    window.agrupar = function(pedidos, ...args) {
+      console.log('📋 Aplicando ordenação aos grupos...');
+      
+      // Chama função original
+      const grupos = agruparOriginal.call(this, pedidos, ...args);
+      
+      // Ordena pedidos dentro de cada grupo
+      if (grupos && typeof grupos === 'object') {
+        Object.keys(grupos).forEach(nomeGrupo => {
+          if (Array.isArray(grupos[nomeGrupo])) {
+            grupos[nomeGrupo] = ordenarPedidosPorNumero(grupos[nomeGrupo]);
+            console.log(`✅ Grupo "${nomeGrupo}": ${grupos[nomeGrupo].length} pedidos ordenados`);
+          }
+        });
+      }
+      
+      return grupos;
+    };
+    console.log('🔄 Interceptação de agrupar instalada');
+  }
+  
+  // BOTÃO MANUAL PARA REORDENAR LISTA ATUAL
+  setTimeout(() => {
+    // Adiciona botão de reordenação
+    const containerBotoes = document.querySelector('.filters-container') || 
+                           document.querySelector('.sb') ||
+                           document.querySelector('#filtros');
+    
+    if (containerBotoes) {
+      const botaoOrdenar = document.createElement('button');
+      botaoOrdenar.innerHTML = '🔢 Ordenar por Número';
+      botaoOrdenar.className = 'btn btn-sm';
+      botaoOrdenar.style.cssText = 'margin: 5px; padding: 6px 10px; font-size: 11px; background: #e3f2fd; border: 1px solid #2196f3; color: #1976d2; border-radius: 4px;';
+      
+      botaoOrdenar.onclick = function() {
+        console.log('🔢 Reordenação manual solicitada...');
+        
+        if (window.FILTRADOS && Array.isArray(window.FILTRADOS)) {
+          const antesOrdem = window.FILTRADOS.slice(0, 3).map(p => p.numero || p.pedido);
+          
+          window.FILTRADOS = ordenarPedidosPorNumero(window.FILTRADOS);
+          
+          const depoisOrdem = window.FILTRADOS.slice(0, 3).map(p => p.numero || p.pedido);
+          
+          console.log(`📈 Antes: ${antesOrdem.join(', ')} | Depois: ${depoisOrdem.join(', ')}`);
+          
+          // Re-renderiza a tabela
+          if (typeof renderTabela === 'function') {
+            renderTabela(window.FILTRADOS);
+          }
+          
+          alert(`✅ Lista reordenada!\n\n${window.FILTRADOS.length} pedidos em ordem cronológica`);
+        } else {
+          alert('❌ Nenhuma lista filtrada encontrada');
+        }
+      };
+      
+      containerBotoes.appendChild(botaoOrdenar);
+      console.log('🔘 Botão "Ordenar por Número" adicionado');
+    }
+  }, 4000);
+  
+  // FUNÇÃO PARA EXTRAIR DATAS DAS OBSERVAÇÕES
+  function extrairDataDaObservacao(observacao) {
+    if (!observacao || typeof observacao !== 'string') return null;
+    
+    // Regex para capturar datas em vários formatos
+    const regexDatas = [
+      /(\d{1,2})\/(\d{1,2})\/(\d{4})/g,  // dd/mm/aaaa ou d/m/aaaa
+      /(\d{1,2})\/(\d{1,2})\/(\d{2})/g,  // dd/mm/aa ou d/m/aa
+      /(\d{1,2})\/(\d{1,2})/g            // dd/mm ou d/m (assume ano atual)
+    ];
+    
+    for (let regex of regexDatas) {
+      const matches = observacao.match(regex);
+      if (matches && matches.length > 0) {
+        // Pega a primeira data encontrada
+        const primeiraData = matches[0];
+        console.log(`📅 Data encontrada na observação: "${primeiraData}" em "${observacao.substring(0, 50)}..."`);
+        
+        // Normaliza a data para dd/mm/aaaa
+        const partes = primeiraData.split('/');
+        let dia = partes[0].padStart(2, '0');
+        let mes = partes[1].padStart(2, '0');
+        let ano = partes[2];
+        
+        // Se não tem ano ou ano de 2 dígitos
+        if (!ano) {
+          ano = new Date().getFullYear().toString();
+        } else if (ano.length === 2) {
+          // Se for 20-99 assume 2020-2099, se for 00-19 assume 2000-2019
+          ano = parseInt(ano) >= 20 ? '20' + ano : '20' + ano;
+        }
+        
+        const dataCompleta = `${dia}/${mes}/${ano}`;
+        console.log(`📅 Data normalizada: ${dataCompleta}`);
+        
+        return dataCompleta;
+      }
+    }
+    
+    return null;
+  }
+  
+  // FUNÇÃO PARA ATUALIZAR DATAS DE ENVIO DOS PEDIDOS
+  function atualizarDatasDeEnvio() {
+    if (!window.PEDIDOS) return;
+    
+    let atualizados = 0;
+    
+    window.PEDIDOS.forEach(pedido => {
+      // Se já tem data de envio, não sobrescreve
+      if (pedido.dataEnvio && pedido.dataEnvio !== '—') return;
+      
+      // Busca data nas observações
+      const dataEncontrada = extrairDataDaObservacao(pedido.observacoes);
+      
+      if (dataEncontrada) {
+        pedido.dataEnvio = dataEncontrada;
+        atualizados++;
+        console.log(`✅ Pedido #${pedido.numero}: data de envio atualizada para ${dataEncontrada}`);
+      }
+    });
+    
+    if (atualizados > 0) {
+      console.log(`🎉 ${atualizados} pedidos tiveram a data de envio atualizada!`);
+      
+      // Atualiza a interface se possível
+      try {
+        if (typeof renderTabela === 'function' && window.FILTRADOS) {
+          renderTabela(window.FILTRADOS);
+        }
+      } catch(e) {
+        console.log('⚠️ Erro ao atualizar tabela:', e);
+      }
+    }
+  }
+  
+  // EXECUTA ATUALIZAÇÃO DE DATAS QUANDO A PÁGINA CARREGA
+  setTimeout(() => {
+    console.log('🔍 Verificando datas nas observações...');
+    atualizarDatasDeEnvio();
+  }, 3000); // Aguarda 3 segundos para garantir que os dados carregaram
+  
   // Substitui a função quebrada pela que funciona DE VERDADE
   setTimeout(function() {
     window.criarListaDefinitiva = function() {
@@ -3662,5 +3849,71 @@ document.addEventListener('DOMContentLoaded', function() {
   };
 
   console.log('✅ Novo fluxo carregado: SALVAR LISTA → MODAL → OPÇÕES');
+  
+  // ADICIONA BOTÃO PARA ATUALIZAR DATAS MANUALMENTE  
+  setTimeout(() => {
+    // Procura onde adicionar o botão - ao lado do botão SALVAR LISTA
+    const containerBotoes = document.querySelector('.list-actions') || 
+                           document.querySelector('[style*="text-align: right"]') ||
+                           document.querySelector('#btn-salvar-lista')?.parentElement;
+    
+    if (containerBotoes) {
+      const botaoAtualizar = document.createElement('button');
+      botaoAtualizar.innerHTML = '📅 Atualizar Datas';
+      botaoAtualizar.className = 'btn btn-outline';
+      botaoAtualizar.style.cssText = 'margin-left: 10px; padding: 8px 12px; font-size: 12px; background: #f8f9fa; border: 1px solid #ddd; border-radius: 4px;';
+      
+      botaoAtualizar.onclick = function() {
+        console.log('🔄 Executando atualização manual de datas...');
+        
+        if (!window.PEDIDOS) {
+          alert('❌ Nenhum pedido carregado!');
+          return;
+        }
+        
+        let atualizados = 0;
+        let exemplos = [];
+        
+        window.PEDIDOS.forEach(pedido => {
+          // Se já tem data de envio válida, pula
+          if (pedido.dataEnvio && pedido.dataEnvio !== '—' && pedido.dataEnvio !== '') return;
+          
+          const dataEncontrada = extrairDataDaObservacao(pedido.observacoes);
+          
+          if (dataEncontrada) {
+            pedido.dataEnvio = dataEncontrada;
+            atualizados++;
+            
+            if (exemplos.length < 3) {
+              exemplos.push(`#${pedido.numero}: ${dataEncontrada}`);
+            }
+          }
+        });
+        
+        if (atualizados > 0) {
+          alert(`✅ ${atualizados} pedidos atualizados!\n\nExemplos:\n${exemplos.join('\n')}\n\nVeja o console para a lista completa.`);
+          
+          // Atualiza interface
+          try {
+            if (typeof renderTabela === 'function' && window.FILTRADOS) {
+              renderTabela(window.FILTRADOS);
+            }
+            if (typeof atualizarStats === 'function') {
+              atualizarStats();
+            }
+          } catch(e) {
+            console.log('⚠️ Erro ao atualizar interface:', e);
+          }
+        } else {
+          alert('ℹ️ Nenhuma data encontrada nas observações ou todos os pedidos já possuem data de envio.');
+        }
+      };
+      
+      containerBotoes.appendChild(botaoAtualizar);
+      console.log('🔘 Botão "Atualizar Datas" adicionado com sucesso');
+    } else {
+      console.log('⚠️ Container para o botão não encontrado');
+    }
+  }, 3000);
 }, 1000);
 </script>
