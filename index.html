@@ -3022,30 +3022,65 @@ document.addEventListener('DOMContentLoaded', function() {
       const numeroA = parseInt(String(a.numero || a.pedido || '0').replace(/[^\d]/g, '')) || 0;
       const numeroB = parseInt(String(b.numero || b.pedido || '0').replace(/[^\d]/g, '')) || 0;
       
-      // Ordena do menor para o maior (cronológica)
-      return numeroA - numeroB;
+      // INVERTE: Ordena do maior para o menor (mais recentes primeiro)
+      return numeroB - numeroA;
     });
+  }
+  
+  // FUNÇÃO PARA FILTRAR DRAFT ORDERS APENAS COM "AGUARDANDO SEGUNDO PAGAMENTO"
+  function filtrarDraftOrders(draftOrders) {
+    if (!Array.isArray(draftOrders)) return [];
+    
+    const filtrados = draftOrders.filter(pedido => {
+      // Verifica se é um Draft Order
+      if (!pedido.isDraft && !String(pedido.numero || pedido.pedido || '').includes('D-')) {
+        return true; // Mantém pedidos normais
+      }
+      
+      // Para Draft Orders, verifica se tem a frase específica
+      const observacoes = String(pedido.observacoes || pedido.obsCliente || pedido.note || '').toUpperCase();
+      const temFrase = observacoes.includes('AGUARDANDO SEGUNDO PAGAMENTO');
+      
+      if (pedido.isDraft || String(pedido.numero || '').includes('D-')) {
+        if (temFrase) {
+          console.log(`✅ Draft Order aprovado: ${pedido.numero} - tem "AGUARDANDO SEGUNDO PAGAMENTO"`);
+        } else {
+          console.log(`❌ Draft Order filtrado: ${pedido.numero} - não tem "AGUARDANDO SEGUNDO PAGAMENTO"`);
+        }
+        return temFrase;
+      }
+      
+      return true; // Mantém outros pedidos
+    });
+    
+    console.log(`📋 Draft Orders: ${draftOrders.length - filtrados.length + draftOrders.filter(p => !p.isDraft).length} filtrados, ${filtrados.filter(p => p.isDraft).length} aprovados`);
+    
+    return filtrados;
   }
   
   // INTERCEPTA A RENDERIZAÇÃO DE TABELAS PARA APLICAR ORDENAÇÃO
   const renderTabelaOriginal = window.renderTabela;
   if (renderTabelaOriginal) {
     window.renderTabela = function(pedidos, ...args) {
-      console.log('📊 Aplicando ordenação cronológica aos pedidos...');
+      console.log('📊 Aplicando filtros e ordenação aos pedidos...');
       
       if (pedidos && Array.isArray(pedidos) && pedidos.length > 0) {
-        // Ordena os pedidos antes de renderizar
-        const pedidosOrdenados = ordenarPedidosPorNumero([...pedidos]); // Cria cópia para não modificar original
-        console.log(`✅ ${pedidosOrdenados.length} pedidos ordenados por número`);
+        // 1. Filtra Draft Orders primeiro
+        let pedidosFiltrados = filtrarDraftOrders(pedidos);
+        
+        // 2. Ordena os pedidos (mais recentes primeiro)
+        const pedidosOrdenados = ordenarPedidosPorNumero(pedidosFiltrados);
+        
+        console.log(`✅ ${pedidosOrdenados.length} pedidos processados (${pedidos.length - pedidosOrdenados.length} Draft Orders filtrados)`);
         
         // Log dos primeiros e últimos para verificar ordem
         if (pedidosOrdenados.length >= 2) {
           const primeiro = pedidosOrdenados[0];
           const ultimo = pedidosOrdenados[pedidosOrdenados.length - 1];
-          console.log(`📈 Ordem: #${primeiro.numero || primeiro.pedido} → #${ultimo.numero || ultimo.pedido}`);
+          console.log(`📈 Ordem: #${primeiro.numero || primeiro.pedido} → #${ultimo.numero || ultimo.pedido} (mais recente primeiro)`);
         }
         
-        // Chama a função original com pedidos ordenados
+        // Chama a função original com pedidos processados
         return renderTabelaOriginal.call(this, pedidosOrdenados, ...args);
       }
       
@@ -3054,6 +3089,35 @@ document.addEventListener('DOMContentLoaded', function() {
     };
     console.log('🔄 Interceptação de renderTabela instalada');
   }
+  
+  // INTERCEPTA TAMBÉM O CARREGAMENTO INICIAL DOS DADOS
+  const pedidosOriginais = window.PEDIDOS;
+  Object.defineProperty(window, 'PEDIDOS', {
+    get: function() {
+      return pedidosOriginais;
+    },
+    set: function(novosPedidos) {
+      if (Array.isArray(novosPedidos) && novosPedidos.length > 0) {
+        console.log(`📥 Interceptando ${novosPedidos.length} pedidos da sincronização...`);
+        
+        // Aplica filtros nos dados que chegam da Shopify
+        const pedidosFiltrados = filtrarDraftOrders(novosPedidos);
+        const pedidosOrdenados = ordenarPedidosPorNumero(pedidosFiltrados);
+        
+        console.log(`✅ Sincronização processada: ${pedidosOrdenados.length} pedidos válidos`);
+        
+        pedidosOriginais = pedidosOrdenados;
+        
+        // Atualiza FILTRADOS também se existir
+        if (window.FILTRADOS) {
+          window.FILTRADOS = pedidosOrdenados;
+        }
+      } else {
+        pedidosOriginais = novosPedidos;
+      }
+    },
+    configurable: true
+  });
   
   // INTERCEPTA AGRUPAMENTOS TAMBÉM PARA MANTER ORDEM DENTRO DOS GRUPOS
   const agruparOriginal = window.agrupar;
@@ -3088,16 +3152,21 @@ document.addEventListener('DOMContentLoaded', function() {
     
     if (containerBotoes) {
       const botaoOrdenar = document.createElement('button');
-      botaoOrdenar.innerHTML = '🔢 Ordenar por Número';
+      botaoOrdenar.innerHTML = '🔄 Filtrar e Ordenar';
       botaoOrdenar.className = 'btn btn-sm';
       botaoOrdenar.style.cssText = 'margin: 5px; padding: 6px 10px; font-size: 11px; background: #e3f2fd; border: 1px solid #2196f3; color: #1976d2; border-radius: 4px;';
       
       botaoOrdenar.onclick = function() {
-        console.log('🔢 Reordenação manual solicitada...');
+        console.log('🔄 Aplicando filtros e ordenação manual...');
         
         if (window.FILTRADOS && Array.isArray(window.FILTRADOS)) {
+          const antes = window.FILTRADOS.length;
           const antesOrdem = window.FILTRADOS.slice(0, 3).map(p => p.numero || p.pedido);
           
+          // Aplica filtros de Draft Orders
+          window.FILTRADOS = filtrarDraftOrders(window.FILTRADOS);
+          
+          // Aplica ordenação (mais recentes primeiro)
           window.FILTRADOS = ordenarPedidosPorNumero(window.FILTRADOS);
           
           const depoisOrdem = window.FILTRADOS.slice(0, 3).map(p => p.numero || p.pedido);
@@ -3109,14 +3178,16 @@ document.addEventListener('DOMContentLoaded', function() {
             renderTabela(window.FILTRADOS);
           }
           
-          alert(`✅ Lista reordenada!\n\n${window.FILTRADOS.length} pedidos em ordem cronológica`);
+          const draftsFiltrados = antes - window.FILTRADOS.length;
+          
+          alert(`✅ Lista processada!\n\n${window.FILTRADOS.length} pedidos em ordem cronológica\n${draftsFiltrados > 0 ? draftsFiltrados + ' Draft Orders filtrados' : ''}\n\nMais recentes aparecem primeiro`);
         } else {
           alert('❌ Nenhuma lista filtrada encontrada');
         }
       };
       
       containerBotoes.appendChild(botaoOrdenar);
-      console.log('🔘 Botão "Ordenar por Número" adicionado');
+      console.log('🔘 Botão "Filtrar e Ordenar" adicionado');
     }
   }, 4000);
   
