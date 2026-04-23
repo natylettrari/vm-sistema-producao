@@ -1088,6 +1088,20 @@ function renderMinhasListas() {
   const el = document.getElementById('minhas-listas-cont');
   if (!el) return;
 
+  // CARREGA LISTAS DO LOCALSTORAGE PRIMEIRO
+  try {
+    const listasSalvas = localStorage.getItem('VILMA_LISTAS');
+    if (listasSalvas) {
+      window.LISTAS = JSON.parse(listasSalvas);
+      console.log(`📋 ${window.LISTAS.length} listas carregadas do localStorage`);
+    } else if (!window.LISTAS) {
+      window.LISTAS = [];
+    }
+  } catch(e) {
+    console.warn('Erro ao carregar localStorage:', e);
+    if (!window.LISTAS) window.LISTAS = [];
+  }
+
   if (!LISTAS.length) {
     el.innerHTML = '<div class="loading">Nenhuma lista gerada ainda</div>';
     return;
@@ -1882,6 +1896,17 @@ function renderCal() {
     </div>`;
   }
   grid.innerHTML=html;
+  
+  // CARREGA LISTAS DO LOCALSTORAGE PARA O CALENDÁRIO
+  try {
+    const listasSalvas = localStorage.getItem('VILMA_LISTAS');
+    if (listasSalvas) {
+      window.LISTAS = JSON.parse(listasSalvas);
+    }
+  } catch(e) {
+    console.warn('Erro ao carregar listas para calendário:', e);
+  }
+  
   renderListaSemData();
 }
 
@@ -2883,60 +2908,38 @@ function criarListaDefinitiva() {
   
   console.log('✅ Confirmado pelo usuário. Processando...');
   
-  // SALVAMENTO DAS LISTAS - ADICIONADO AQUI
+  // SALVAMENTO SIMPLES DAS LISTAS
   const numeroLista = String((window.LISTAS ? window.LISTAS.length : 0) + 1).padStart(3, '0');
   const modelos = [...new Set(pedidosEncontrados.map(p => p.modeloBase))];
-  const resumoModelos = modelos.slice(0, 2).join(', ') + 
-                       (modelos.length > 2 ? ` +${modelos.length - 2}` : '');
+  const resumoModelos = modelos.slice(0, 2).join(', ') + (modelos.length > 2 ? ` +${modelos.length - 2}` : '');
   
-  const lista = {
+  const novaLista = {
     id: numeroLista,
     numero: numeroLista,
     nome: `Lista #${numeroLista}`,
     resumo: resumoModelos,
-    produtos: pedidosEncontrados.map(p => ({
-      pedido: p.numero,
-      modelo: p.modeloBase,
-      cor: p.colecaoCor,
-      bordado: p.bordado || 'Sem bordado',
-      vendedora: p.vendedora,
-      status: p.status
-    })),
+    produtos: pedidosEncontrados,
     totalPecas: pedidosEncontrados.length,
     criadaEm: new Date().toLocaleString('pt-BR'),
-    status: 'em_producao',
-    dataProducao: null // Será definida no calendário
+    dataProducao: null,
+    status: 'em_producao'
   };
   
-  // Salva na memória E localStorage
+  // Inicializa LISTAS se não existir
   if (!window.LISTAS) window.LISTAS = [];
-  window.LISTAS.push(lista);
+  window.LISTAS.push(novaLista);
   
+  // Salva no localStorage
   try {
     localStorage.setItem('VILMA_LISTAS', JSON.stringify(window.LISTAS));
-    console.log('💾 Lista salva permanentemente:', lista.nome);
   } catch(e) {
-    console.warn('⚠️ Erro ao salvar no localStorage:', e);
+    console.warn('Erro ao salvar localStorage:', e);
   }
   
-  // Marca pedidos como produção
-  pedidosEncontrados.forEach(pedido => {
-    pedido.status = 'em_producao';
-  });
+  // Marca como produção
+  pedidosEncontrados.forEach(p => p.status = 'em_producao');
   
-  // Atualiza visual na tabela
-  checkboxesMarcados.forEach(cb => {
-    const linha = cb.closest('tr');
-    const statusCol = linha.querySelector('td:last-child');
-    if (statusCol) {
-      statusCol.innerHTML = '<span class="bdg bp">Em produção</span>';
-    }
-  });
-  
-  // Mostra modal de sucesso
-  mostrarModalSucesso(lista, pedidosEncontrados.length);
-  
-  toast(`✅ Lista ${lista.nome} criada com ${pedidosEncontrados.length} produtos!`);
+  toast(`✅ ${novaLista.nome} criada com ${pedidosEncontrados.length} produtos e salva com sucesso!`);
 }
 
 function abrirImpressaoLimpa(pedidos) {
@@ -4530,304 +4533,5 @@ function formatarData(data) {
   return data;
 }
 
-// ==== FUNÇÕES DE MODAL E LISTAS ====
-
-// Modal de sucesso elegante
-function mostrarModalSucesso(lista, totalMarcados) {
-  // Remove modal anterior
-  const anterior = document.getElementById('modal-lista-sucesso');
-  if (anterior) anterior.remove();
-  
-  const modal = document.createElement('div');
-  modal.className = 'cal-modal';
-  modal.id = 'modal-lista-sucesso';
-  
-  modal.innerHTML = `
-    <div class="cal-modal-box" style="max-width: 500px; text-align: center; padding: 32px">
-      
-      <div style="width: 80px; height: 80px; background: var(--rose); border-radius: 50%; 
-                  margin: 0 auto 24px; display: flex; align-items: center; justify-content: center;
-                  box-shadow: 0 8px 24px rgba(138, 76, 82, 0.3)">
-        <span style="font-size: 36px; color: white;">✓</span>
-      </div>
-      
-      <h2 style="font-family: var(--serif); font-style: italic; font-size: 28px; 
-                 color: var(--rose); margin: 0 0 12px 0">
-        ${lista.nome} salva com sucesso!
-      </h2>
-      
-      <div style="background: var(--rose-ll); border-radius: 12px; padding: 20px; margin: 24px 0">
-        <div style="font-size: 16px; color: var(--text2); margin-bottom: 8px">
-          <strong>${lista.resumo}</strong>
-        </div>
-        <div style="font-size: 14px; color: var(--text3)">
-          <strong style="color: var(--rose)">${lista.totalPecas} produtos</strong> • 
-          <strong style="color: #2e9e5a">${totalMarcados} em produção</strong>
-        </div>
-      </div>
-      
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 28px 0">
-        <button onclick="imprimirUltimaLista()" 
-                style="background: var(--gold); color: white; border: none; border-radius: 8px; 
-                       padding: 14px 18px; font-size: 14px; font-weight: 500; cursor: pointer;
-                       transition: all 0.2s; display: flex; align-items: center; justify-content: center; gap: 8px"
-                onmouseover="this.style.background='#a8834a'" 
-                onmouseout="this.style.background='var(--gold)'">
-          🖨️ Imprimir Lista
-        </button>
-        <button onclick="verMinhasListas()" 
-                style="background: var(--rose); color: white; border: none; border-radius: 8px; 
-                       padding: 14px 18px; font-size: 14px; font-weight: 500; cursor: pointer;
-                       transition: all 0.2s; display: flex; align-items: center; justify-content: center; gap: 8px"
-                onmouseover="this.style.background='#7a3d44'" 
-                onmouseout="this.style.background='var(--rose)'">
-          📋 Ver Minhas Listas
-        </button>
-      </div>
-      
-      <button onclick="irParaCalendario()" 
-              style="background: var(--lilac); color: white; border: none; border-radius: 8px; 
-                     padding: 12px 20px; font-size: 13px; cursor: pointer; margin-bottom: 15px;
-                     transition: all 0.2s"
-              onmouseover="this.style.background='#8a6a7c'" 
-              onmouseout="this.style.background='var(--lilac)'">
-        📅 Agendar no Calendário
-      </button>
-      
-      <button onclick="fecharModalSucesso()" 
-              style="background: transparent; color: var(--text3); border: 1px solid var(--border2); 
-                     border-radius: 6px; padding: 8px 16px; font-size: 12px; cursor: pointer;
-                     transition: all 0.2s; display: block; margin: 0 auto"
-              onmouseover="this.style.borderColor='var(--rose)'; this.style.color='var(--rose)'" 
-              onmouseout="this.style.borderColor='var(--border2)'; this.style.color='var(--text3)'">
-        Fechar
-      </button>
-    </div>
-  `;
-  
-  document.body.appendChild(modal);
-  
-  // Foco no primeiro botão
-  setTimeout(() => {
-    const btn = modal.querySelector('button');
-    if (btn) btn.focus();
-  }, 100);
-}
-
-// Funções do modal
-window.imprimirUltimaLista = function() {
-  if (window.LISTAS && window.LISTAS.length > 0) {
-    const ultimaLista = window.LISTAS[window.LISTAS.length - 1];
-    abrirImpressaoLimpa(ultimaLista.produtos);
-  }
-};
-
-window.verMinhasListas = function() {
-  fecharModalSucesso();
-  if (typeof showSec === 'function') {
-    const navBtns = document.querySelectorAll('.nav-btn');
-    // Procura o botão "Minhas Listas" - posição pode variar
-    for (let i = 0; i < navBtns.length; i++) {
-      if (navBtns[i].textContent.toLowerCase().includes('minhas listas')) {
-        showSec('minhas-listas', navBtns[i]);
-        break;
-      }
-    }
-  }
-};
-
-window.irParaCalendario = function() {
-  fecharModalSucesso();
-  if (typeof showSec === 'function') {
-    const navBtns = document.querySelectorAll('.nav-btn');
-    // Procura o botão "Calendário"
-    for (let i = 0; i < navBtns.length; i++) {
-      if (navBtns[i].textContent.toLowerCase().includes('calendário')) {
-        showSec('calendario', navBtns[i]);
-        break;
-      }
-    }
-  }
-};
-
-window.fecharModalSucesso = function() {
-  const modal = document.getElementById('modal-lista-sucesso');
-  if (modal) modal.remove();
-};
-
-// Carrega listas salvas no localStorage
-document.addEventListener('DOMContentLoaded', function() {
-  setTimeout(() => {
-    try {
-      const listasSalvas = localStorage.getItem('VILMA_LISTAS');
-      if (listasSalvas) {
-        window.LISTAS = JSON.parse(listasSalvas);
-        console.log(`📋 ${window.LISTAS.length} listas carregadas do localStorage`);
-      } else {
-        window.LISTAS = [];
-        console.log('📋 Nenhuma lista salva encontrada - inicializando array vazio');
-      }
-    } catch(e) {
-      console.warn('⚠️ Erro ao carregar listas do localStorage:', e);
-      window.LISTAS = [];
-    }
-  }, 1000);
-});
-
-// ==== SISTEMA DE CALENDÁRIO COM LISTAS ====
-
-// Intercepta navegação para o calendário
-document.addEventListener('DOMContentLoaded', function() {
-  setTimeout(() => {
-    // Substitui a função showSec para detectar quando vai para o calendário
-    const showSecOriginal = window.showSec;
-    if (showSecOriginal) {
-      window.showSec = function(secName, ...args) {
-        const result = showSecOriginal.call(this, secName, ...args);
-        
-        if (secName === 'calendario') {
-          setTimeout(() => {
-            adicionarListasAoCalendario();
-          }, 300);
-        }
-        
-        return result;
-      };
-      console.log('📅 Interceptor do calendário configurado');
-    }
-  }, 2000);
-});
-
-// Função para adicionar listas ao calendário
-function adicionarListasAoCalendario() {
-  if (!window.LISTAS || window.LISTAS.length === 0) {
-    console.log('📅 Nenhuma lista para mostrar no calendário');
-    return;
-  }
-  
-  console.log('📅 Adicionando listas ao calendário...');
-  
-  // Remove painel anterior se existir
-  const painelAnterior = document.querySelector('.painel-listas-calendario');
-  if (painelAnterior) painelAnterior.remove();
-  
-  // Procura o container do calendário
-  const secaoCalendario = document.querySelector('#sec-calendario');
-  if (!secaoCalendario) {
-    console.log('⚠️ Seção do calendário não encontrada');
-    return;
-  }
-  
-  // Cria painel com listas sem data
-  const listasSemData = window.LISTAS.filter(lista => !lista.dataProducao);
-  
-  if (listasSemData.length === 0) {
-    console.log('📅 Todas as listas já têm data agendada');
-    return;
-  }
-  
-  const painel = document.createElement('div');
-  painel.className = 'painel-listas-calendario';
-  painel.style.cssText = `
-    position: fixed;
-    top: 100px;
-    right: 20px;
-    width: 300px;
-    max-height: 500px;
-    background: white;
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    box-shadow: 0 4px 20px rgba(0,0,0,0.1);
-    z-index: 1000;
-    overflow: hidden;
-  `;
-  
-  painel.innerHTML = `
-    <div style="background: var(--rose); color: white; padding: 15px; text-align: center;">
-      <h4 style="margin: 0; font-size: 14px; font-weight: 500;">
-        📋 Listas para Agendar (${listasSemData.length})
-      </h4>
-    </div>
-    
-    <div style="padding: 15px; max-height: 400px; overflow-y: auto;">
-      ${listasSemData.map(lista => `
-        <div class="lista-card-calendario" data-lista-id="${lista.id}" 
-             style="background: linear-gradient(135deg, var(--rose), #a85862); 
-                    color: white; padding: 12px; border-radius: 8px; margin-bottom: 8px; 
-                    cursor: pointer; font-size: 12px; position: relative;
-                    transition: all 0.2s ease;">
-          <div style="font-weight: bold; margin-bottom: 4px;">${lista.nome}</div>
-          <div style="opacity: 0.9; margin-bottom: 2px;">${lista.resumo}</div>
-          <div style="opacity: 0.8; font-size: 11px;">${lista.totalPecas} produtos • ${lista.criadaEm}</div>
-          
-          <div style="position: absolute; top: 8px; right: 8px; display: flex; gap: 4px;">
-            <button onclick="agendarLista('${lista.id}')" 
-                    style="background: rgba(255,255,255,0.2); border: none; color: white; 
-                           padding: 4px 6px; border-radius: 3px; font-size: 10px; cursor: pointer;"
-                    title="Agendar manualmente">📅</button>
-            <button onclick="imprimirLista('${lista.id}')" 
-                    style="background: rgba(255,255,255,0.2); border: none; color: white; 
-                           padding: 4px 6px; border-radius: 3px; font-size: 10px; cursor: pointer;"
-                    title="Imprimir">🖨️</button>
-          </div>
-        </div>
-      `).join('')}
-    </div>
-    
-    <div style="padding: 10px; text-align: center; font-size: 11px; color: var(--text3); 
-                border-top: 1px solid var(--border);">
-      💡 Clique em 📅 para agendar uma data
-    </div>
-    
-    <button onclick="fecharPainelListas()" 
-            style="position: absolute; top: 10px; right: 10px; background: rgba(255,255,255,0.2); 
-                   border: none; color: white; padding: 4px 8px; border-radius: 3px; 
-                   font-size: 12px; cursor: pointer;">✕</button>
-  `;
-  
-  document.body.appendChild(painel);
-  console.log(`📅 Painel criado com ${listasSemData.length} listas`);
-}
-
-// Funções do calendário
-window.agendarLista = function(listaId) {
-  const lista = window.LISTAS.find(l => l.id === listaId);
-  if (!lista) return;
-  
-  const data = prompt(`Agendar ${lista.nome} para qual data?\n\nFormato: dd/mm/aaaa`, 
-                      new Date().toLocaleDateString('pt-BR'));
-  
-  if (data && data.trim()) {
-    lista.dataProducao = data.trim();
-    
-    try {
-      localStorage.setItem('VILMA_LISTAS', JSON.stringify(window.LISTAS));
-      console.log(`📅 Lista ${lista.nome} agendada para ${data}`);
-      
-      // Atualiza o painel
-      adicionarListasAoCalendario();
-      
-      alert(`✅ ${lista.nome} agendada para ${data}!`);
-    } catch(e) {
-      alert('❌ Erro ao salvar agendamento');
-    }
-  }
-};
-
-window.imprimirLista = function(listaId) {
-  const lista = window.LISTAS.find(l => l.id === listaId);
-  if (!lista || !lista.produtos) {
-    alert('❌ Lista não encontrada');
-    return;
-  }
-  
-  abrirImpressaoLimpa(lista.produtos);
-};
-
-window.fecharPainelListas = function() {
-  const painel = document.querySelector('.painel-listas-calendario');
-  if (painel) painel.remove();
-};
-
-console.log('🎯 Sistema funcional melhorado carregado!');
+console.log('🎯 Sistema completo de calendário carregado!');
 </script>
