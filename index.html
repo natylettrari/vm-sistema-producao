@@ -2908,6 +2908,7 @@ function criarListaDefinitiva() {
   const modelos = [...new Set(pedidosEncontrados.map(p => p.modeloBase))];
   const resumo = modelos.slice(0, 2).join(', ') + (modelos.length > 2 ? ` +${modelos.length - 2}` : '');
   
+  const agora = new Date();
   const novaLista = {
     id: `lista_${Date.now()}`,
     numero: numeroLista,
@@ -2925,8 +2926,10 @@ function criarListaDefinitiva() {
       dataEnvio: p.dataEnvio
     })),
     totalPecas: pedidosEncontrados.length,
-    criadaEm: new Date().toISOString(),
-    criadaEmFormatada: new Date().toLocaleString('pt-BR'),
+    criadaEm: agora.toISOString(),
+    criadaEmFormatada: agora.toLocaleString('pt-BR'),
+    dataCriacao: agora.toLocaleDateString('pt-BR'),
+    horaCriacao: agora.toLocaleTimeString('pt-BR'),
     dataProducao: null,
     status: 'em_producao'
   };
@@ -2944,6 +2947,7 @@ function criarListaDefinitiva() {
   } catch(error) {
     console.error('❌ Erro ao salvar no localStorage:', error);
     toast('⚠️ Erro ao salvar lista: ' + error.message);
+    return;
   }
   
   // Marcar pedidos como "em produção"
@@ -2956,9 +2960,18 @@ function criarListaDefinitiva() {
   });
   
   console.log(`🏭 ${pedidosMarcados} pedidos marcados como "em produção"`);
-  // ========== FIM DO SALVAMENTO ==========
   
-  toast(`✅ ${novaLista.nome} criada! ${pedidosMarcados} pedidos → produção. Total: ${window.LISTAS_SALVAS.length} listas salvas.`);
+  // ATUALIZAR INTERFACE
+  if (typeof atualizarStats === 'function') atualizarStats();
+  if (typeof renderTabela === 'function') renderTabela(FILTRADOS);
+  
+  // MOSTRAR MODAL DE SUCESSO ORIGINAL
+  if (typeof mostrarModalSucesso === 'function') {
+    mostrarModalSucesso(novaLista);
+  } else {
+    toast(`✅ ${novaLista.nome} criada! ${pedidosMarcados} pedidos → produção`);
+  }
+  // ========== FIM DO SALVAMENTO ==========
 }
 
 function abrirImpressaoLimpa(pedidos) {
