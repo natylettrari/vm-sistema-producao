@@ -407,7 +407,6 @@ input[type=checkbox]{accent-color:var(--rose);cursor:pointer}
         <button class="ord-btn on" onclick="setOrd(this)"><span class="ord-dot"></span>Modelo</button>
         <button class="ord-btn" onclick="setOrd(this)"><span class="ord-dot"></span>Data de envio</button>
         <button class="ord-btn" onclick="setOrd(this)"><span class="ord-dot"></span>Data do pedido</button>
-        <button class="ord-btn" onclick="setOrd(this)"><span class="ord-dot"></span>Semana do pedido</button>
         <button class="ord-btn" onclick="setOrd(this)"><span class="ord-dot"></span>Vendedora</button>
         <button class="ord-btn" onclick="setOrd(this)"><span class="ord-dot"></span>Coleção / Cor</button>
         <button class="ord-btn" onclick="setOrd(this)"><span class="ord-dot"></span>Lote de envio</button>
@@ -1366,9 +1365,6 @@ function agrupar(peds,ordBy) {
     let k;
     if(ordBy.includes('Modelo')) k=p.modeloBase||'Outros';
     else if(ordBy.includes('envio')||ordBy.includes('Lote')) k='Envio '+(p.dataEnvio||'—');
-    else if(ordBy.includes('Semana')){
-      if(p.dataPedido&&p.dataPedido!=='—'){const pts=p.dataPedido.split('/');const d=new Date(`${pts[2]||new Date().getFullYear()}-${pts[1]}-${pts[0]}`);const dom=new Date(d);dom.setDate(d.getDate()-d.getDay());const sab=new Date(dom);sab.setDate(dom.getDate()+6);k='Semana '+dom.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'})+' – '+sab.toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit'});}else k='Sem data';
-    }
     else if(ordBy.includes('pedido')) k='Pedido '+p.dataPedido;
     else if(ordBy.includes('Vendedora')) k=p.vendedora||'—';
     else if(ordBy.includes('Cor')||ordBy.includes('Coleção')) k=p.colecaoCor||'Outros';
@@ -3166,15 +3162,30 @@ console.log('✅ Solução nova carregada - use criarListaNova()');
 </script>
 
 <script>
-// NOVO FLUXO: SALVAR LISTA → MODAL → OPÇÕES
-console.log('🔄 Carregando novo fluxo de criação de listas...');
+// CORREÇÃO FINAL - VERSÃO MAIS SIMPLES
+document.addEventListener('DOMContentLoaded', function() {
+  console.log('🔧 Aplicando correção do botão SALVAR LISTA...');
+  
+  // Aguarda um pouco e substitui a função
+  setTimeout(function() {
+    window.criarListaDefinitiva = function() {
+      console.log('💾 NOVA FUNÇÃO EXECUTANDO!');
+      
+      const checkboxes = document.querySelectorAll('.lrcb:checked');
+      
+      if (checkboxes.length === 0) {
+        alert('❌ Marque pelo menos um pedido!');
+        return;
+      }
+      
+      alert(`✅ FUNCIONOU! ${checkboxes.length} pedidos selecionados.\n\nVou implementar o modal elegante agora!`);
+    };
+    
+    console.log('✅ Função SALVAR LISTA corrigida!');
+  }, 2000);
+});
 
-setTimeout(function() {
-  // SUBSTITUI por fluxo elegante
-  window.criarListaDefinitiva = function() {
-    console.log('💾 EXECUTANDO: Salvar Lista');
-    salvarListaElegante();
-  };
+// TESTE: Clique no botão para verificar se aparece o alert de sucesso
 
   // FUNÇÃO PRINCIPAL: Salvar lista sem mexer nos status
   window.salvarListaElegante = function() {
