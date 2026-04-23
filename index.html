@@ -3027,7 +3027,7 @@ document.addEventListener('DOMContentLoaded', function() {
     });
   }
   
-  // FUNÇÃO PARA FILTRAR DRAFT ORDERS APENAS COM "AGUARDANDO SEGUNDO PAGAMENTO"
+  // FUNÇÃO PARA FILTRAR DRAFT ORDERS APENAS COM FRASES ESPECÍFICAS
   function filtrarDraftOrders(draftOrders) {
     if (!Array.isArray(draftOrders)) return [];
     
@@ -3037,23 +3037,24 @@ document.addEventListener('DOMContentLoaded', function() {
         return true; // Mantém pedidos normais
       }
       
-      // Para Draft Orders, verifica se tem a frase específica
+      // Para Draft Orders, verifica se tem uma das frases específicas
       const observacoes = String(pedido.observacoes || pedido.obsCliente || pedido.note || '').toUpperCase();
-      const temFrase = observacoes.includes('AGUARDANDO SEGUNDO PAGAMENTO');
+      const temSegundoPagamento = observacoes.includes('SEGUNDO PAGAMENTO') || 
+                                 observacoes.includes('AGUARDANDO SEGUNDO PAGAMENTO');
       
       if (pedido.isDraft || String(pedido.numero || '').includes('D-')) {
-        if (temFrase) {
-          console.log(`✅ Draft Order aprovado: ${pedido.numero} - tem "AGUARDANDO SEGUNDO PAGAMENTO"`);
+        if (temSegundoPagamento) {
+          console.log(`✅ Draft Order aprovado: ${pedido.numero} - tem frase de segundo pagamento`);
         } else {
-          console.log(`❌ Draft Order filtrado: ${pedido.numero} - não tem "AGUARDANDO SEGUNDO PAGAMENTO"`);
+          console.log(`❌ Draft Order filtrado: ${pedido.numero} - não tem frase de segundo pagamento`);
         }
-        return temFrase;
+        return temSegundoPagamento;
       }
       
       return true; // Mantém outros pedidos
     });
     
-    console.log(`📋 Draft Orders: ${draftOrders.length - filtrados.length + draftOrders.filter(p => !p.isDraft).length} filtrados, ${filtrados.filter(p => p.isDraft).length} aprovados`);
+    console.log(`📋 Draft Orders: ${draftOrders.length - filtrados.length + draftOrders.filter(p => !p.isDraft).length} total, ${filtrados.filter(p => p.isDraft).length} Draft Orders aprovados`);
     
     return filtrados;
   }
@@ -3335,19 +3336,32 @@ document.addEventListener('DOMContentLoaded', function() {
         status: 'em_producao'
       };
       
-      // SALVAR na memória
+      // SALVAR na memória E persistir no localStorage
       if (!window.LISTAS) window.LISTAS = [];
       window.LISTAS.push(lista);
+      
+      // PERSISTÊNCIA LOCAL PARA NÃO PERDER AS LISTAS
+      try {
+        localStorage.setItem('VILMA_LISTAS', JSON.stringify(window.LISTAS));
+        console.log('💾 Lista persistida no localStorage');
+      } catch(e) {
+        console.warn('⚠️ Erro ao salvar no localStorage:', e);
+      }
       
       // GUARDAR para impressão
       window._ULTIMA_LISTA = lista;
       window._PRODUTOS_IMPRESSAO = pedidosParaImprimir;
       
       console.log('💾 Lista salva! Total listas:', window.LISTAS.length);
+      console.log('🗂️ Lista guardada para impressão:', pedidosParaImprimir.length, 'produtos');
       
-      // PERSISTIR STATUS nos dados dos pedidos
+      // CONTROLE POR MODELO - MARCA TODOS OS PRODUTOS DOS MODELOS SELECIONADOS
+      const modelosSelecionados = [...new Set(produtos.map(p => p.modelo))];
+      console.log('📦 Modelos na lista:', modelosSelecionados);
+      
+      // PERSISTIR STATUS nos dados dos pedidos - VERSÃO MELHORADA
       let marcadosProducao = 0;
-      marcados.forEach(cb => {
+      marcados.forEach((cb, index) => {
         const linha = cb.closest('tr');
         const statusCol = linha.querySelector('td:last-child');
         
@@ -3357,32 +3371,68 @@ document.addEventListener('DOMContentLoaded', function() {
           marcadosProducao++;
         }
         
-        // IMPORTANTE: Atualiza o status nos dados também
+        // IMPORTANTE: Busca o pedido nos dados de múltiplas formas
         const dataId = cb.getAttribute('data-id');
-        if (dataId && window.PEDIDOS) {
-          // Tenta diferentes formas de encontrar o pedido
+        const linha = cb.closest('tr');
+        const colunas = linha.querySelectorAll('td');
+        const linhaPedido = colunas[1] ? colunas[1].textContent.trim().replace('#', '') : '';
+        
+        if (window.PEDIDOS && Array.isArray(window.PEDIDOS)) {
+          // Procura por múltiplos critérios
           let pedidoEncontrado = null;
           
           for (let pedido of window.PEDIDOS) {
-            if (String(pedido.id) === String(dataId) || 
-                String(pedido.orderId) === String(dataId) ||
-                String(pedido.orderId || pedido.id) === String(dataId) ||
-                String(pedido.numero) === String(dataId)) {
+            // Tenta diferentes formas de match
+            const matches = [
+              String(pedido.id) === String(dataId),
+              String(pedido.orderId) === String(dataId),
+              String(pedido.numero || '').replace('#', '') === String(linhaPedido),
+              String(pedido.pedido || '').replace('#', '') === String(linhaPedido),
+              String(pedido.id) === String(linhaPedido),
+              String(pedido.orderId || pedido.id) === String(dataId)
+            ];
+            
+            if (matches.some(Boolean)) {
               pedidoEncontrado = pedido;
               break;
             }
           }
           
           if (pedidoEncontrado) {
+            const statusAnterior = pedidoEncontrado.status;
             pedidoEncontrado.status = 'em_producao';
-            console.log('✅ Status persistido para:', pedidoEncontrado.numero);
+            
+            // ADICIONA REFERÊNCIA À LISTA NO PEDIDO
+            if (!pedidoEncontrado.listas) pedidoEncontrado.listas = [];
+            if (!pedidoEncontrado.listas.includes(lista.numero)) {
+              pedidoEncontrado.listas.push(lista.numero);
+            }
+            
+            console.log(`✅ Status atualizado: #${pedidoEncontrado.numero} (${statusAnterior} → em_producao) Lista: ${lista.numero}`);
           } else {
-            console.log('⚠️ Pedido não encontrado para ID:', dataId);
+            console.log(`⚠️ Pedido não encontrado para linha ${index + 1}: dataId="${dataId}" | linhaPedido="${linhaPedido}"`);
           }
+        } else {
+          console.log('⚠️ Array PEDIDOS não encontrado');
         }
       });
       
-      console.log('🏭 Marcados como produção:', marcadosProducao);
+      console.log('🏭 Total marcados como produção:', marcadosProducao);
+      
+      // FORÇA ATUALIZAÇÃO DO ARRAY FILTRADOS TAMBÉM
+      if (window.FILTRADOS && Array.isArray(window.FILTRADOS)) {
+        window.FILTRADOS.forEach(pedido => {
+          const produto = produtos.find(p => 
+            String(pedido.numero || '').replace('#', '') === String(p.pedido) ||
+            String(pedido.pedido || '').replace('#', '') === String(p.pedido)
+          );
+          
+          if (produto) {
+            pedido.status = 'em_producao';
+            console.log(`🔄 FILTRADOS atualizado: #${pedido.numero}`);
+          }
+        });
+      }
       
       // Atualizar interface se as funções existirem
       try {
@@ -3987,4 +4037,444 @@ document.addEventListener('DOMContentLoaded', function() {
     }
   }, 3000);
 }, 1000);
+
+// SISTEMA COMPLETO DE CALENDÁRIO COM LISTAS ARRASTAVÉIS
+setTimeout(() => {
+  console.log('📅 Carregando sistema de calendário com listas...');
+  
+  // CARREGA LISTAS SALVAS DO LOCALSTORAGE
+  try {
+    const listasSalvas = localStorage.getItem('VILMA_LISTAS');
+    if (listasSalvas) {
+      window.LISTAS = JSON.parse(listasSalvas);
+      console.log(`📋 ${window.LISTAS.length} listas carregadas do localStorage`);
+    }
+  } catch(e) {
+    console.warn('⚠️ Erro ao carregar listas do localStorage:', e);
+    window.LISTAS = window.LISTAS || [];
+  }
+  
+  // ADICIONA CSS PARA O CALENDÁRIO
+  const style = document.createElement('style');
+  style.textContent = `
+    .lista-card {
+      background: linear-gradient(135deg, var(--rose), #a85862);
+      color: white;
+      padding: 8px 12px;
+      border-radius: 8px;
+      margin: 4px 0;
+      cursor: move;
+      font-size: 12px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+      transition: all 0.2s ease;
+      position: relative;
+      user-select: none;
+    }
+    
+    .lista-card:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    }
+    
+    .lista-card.dragging {
+      opacity: 0.7;
+      transform: rotate(3deg);
+    }
+    
+    .listas-sem-data {
+      position: fixed;
+      right: 20px;
+      top: 120px;
+      background: white;
+      border: 1px solid #e9ecef;
+      border-radius: 12px;
+      padding: 15px;
+      width: 280px;
+      max-height: 500px;
+      overflow-y: auto;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+      z-index: 1000;
+    }
+    
+    .listas-sem-data h4 {
+      color: var(--rose);
+      margin: 0 0 15px 0;
+      font-size: 14px;
+      text-align: center;
+      font-weight: 600;
+    }
+    
+    .listas-sem-data.hidden {
+      display: none;
+    }
+    
+    .lista-acoes {
+      position: absolute;
+      top: 4px;
+      right: 6px;
+      opacity: 0;
+      transition: opacity 0.2s ease;
+      display: flex;
+      gap: 2px;
+    }
+    
+    .lista-card:hover .lista-acoes {
+      opacity: 1;
+    }
+    
+    .btn-lista {
+      background: rgba(255,255,255,0.2);
+      border: none;
+      color: white;
+      padding: 2px 4px;
+      border-radius: 3px;
+      font-size: 10px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+    
+    .btn-lista:hover {
+      background: rgba(255,255,255,0.4);
+    }
+    
+    .calendario-container {
+      position: relative;
+    }
+    
+    .calendario-dia, [class*="cal-day"], [class*="day"] {
+      border: 2px dashed transparent !important;
+      transition: all 0.2s ease;
+      position: relative;
+    }
+    
+    .calendario-dia.drop-zone, [class*="cal-day"].drop-zone, [class*="day"].drop-zone {
+      border-color: var(--rose) !important;
+      background-color: var(--rose-ll) !important;
+    }
+    
+    .toggle-listas {
+      position: fixed;
+      right: 20px;
+      top: 80px;
+      background: var(--rose);
+      color: white;
+      border: none;
+      padding: 8px 12px;
+      border-radius: 20px;
+      cursor: pointer;
+      font-size: 12px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+      z-index: 1001;
+    }
+  `;
+  document.head.appendChild(style);
+  
+  // INTERCEPTA NAVEGAÇÃO PARA O CALENDÁRIO
+  const showSecOriginal = window.showSec;
+  window.showSec = function(secName, ...args) {
+    const result = showSecOriginal.call(this, secName, ...args);
+    
+    if (secName === 'calendario') {
+      setTimeout(() => {
+        mostrarListasNoCalendario();
+      }, 200);
+    } else {
+      esconderListasNoCalendario();
+    }
+    
+    return result;
+  };
+  
+  console.log('✅ Sistema de calendário configurado');
+}, 2000);
+
+// FUNÇÃO PARA MOSTRAR LISTAS NO CALENDÁRIO
+function mostrarListasNoCalendario() {
+  if (!window.LISTAS || window.LISTAS.length === 0) return;
+  
+  console.log('📅 Mostrando listas no calendário...');
+  
+  // Remove componente anterior
+  const anterior = document.querySelector('.listas-sem-data');
+  if (anterior) anterior.remove();
+  
+  const toggleAnterior = document.querySelector('.toggle-listas');
+  if (toggleAnterior) toggleAnterior.remove();
+  
+  // Cria botão toggle
+  const toggleBtn = document.createElement('button');
+  toggleBtn.className = 'toggle-listas';
+  toggleBtn.innerHTML = '📋 Listas';
+  document.body.appendChild(toggleBtn);
+  
+  // Cria container de listas
+  const listasSemData = document.createElement('div');
+  listasSemData.className = 'listas-sem-data';
+  
+  const listasSemDataArray = window.LISTAS.filter(lista => !lista.dataProducao);
+  const totalListas = window.LISTAS.length;
+  
+  listasSemData.innerHTML = `
+    <h4>Listas sem data (${listasSemDataArray.length}/${totalListas})</h4>
+    <div class="listas-container"></div>
+    <div style="text-align: center; margin-top: 15px; font-size: 11px; color: #666;">
+      Arraste para o dia desejado
+    </div>
+  `;
+  
+  document.body.appendChild(listasSemData);
+  
+  // Adiciona listas
+  const container = listasSemData.querySelector('.listas-container');
+  listasSemDataArray.forEach(lista => {
+    const card = criarCardLista(lista);
+    container.appendChild(card);
+  });
+  
+  // Toggle de visibilidade
+  toggleBtn.onclick = () => {
+    listasSemData.classList.toggle('hidden');
+    toggleBtn.innerHTML = listasSemData.classList.contains('hidden') ? 
+      '📋 Mostrar Listas' : '📋 Ocultar Listas';
+  };
+  
+  // Configura drop zones
+  configurarDropZones();
+}
+
+function esconderListasNoCalendario() {
+  const listasSemData = document.querySelector('.listas-sem-data');
+  const toggleBtn = document.querySelector('.toggle-listas');
+  
+  if (listasSemData) listasSemData.remove();
+  if (toggleBtn) toggleBtn.remove();
+}
+
+// FUNÇÃO PARA CRIAR CARD DE LISTA
+function criarCardLista(lista) {
+  const card = document.createElement('div');
+  card.className = 'lista-card';
+  card.draggable = true;
+  card.dataset.listaId = lista.id;
+  
+  card.innerHTML = `
+    <div style="font-weight: bold; margin-bottom: 3px; padding-right: 50px;">${lista.nome}</div>
+    <div style="font-size: 10px; opacity: 0.9; margin-bottom: 2px;">${lista.resumo}</div>
+    <div style="font-size: 10px; opacity: 0.8;">${lista.totalPecas} produtos</div>
+    
+    <div class="lista-acoes">
+      <button class="btn-lista" onclick="imprimirListaCard('${lista.id}')" title="Imprimir">🖨️</button>
+      <button class="btn-lista" onclick="editarListaCard('${lista.id}')" title="Editar">✏️</button>
+      <button class="btn-lista" onclick="excluirListaCard('${lista.id}')" title="Excluir">🗑️</button>
+    </div>
+  `;
+  
+  // Eventos de arrastar
+  card.addEventListener('dragstart', (e) => {
+    e.dataTransfer.setData('text/plain', lista.id);
+    card.classList.add('dragging');
+    console.log(`📦 Arrastando: ${lista.nome}`);
+  });
+  
+  card.addEventListener('dragend', () => {
+    card.classList.remove('dragging');
+  });
+  
+  return card;
+}
+
+// FUNÇÃO PARA CONFIGURAR DROP ZONES
+function configurarDropZones() {
+  // Seleciona todos os possíveis elementos de dia do calendário
+  const seletores = [
+    '.calendario-dia', 
+    '.cal-day', 
+    '.day',
+    '[class*="dia"]',
+    '[class*="day"]',
+    'td[class*="cal"]',
+    '.calendar-day'
+  ];
+  
+  let diasEncontrados = 0;
+  
+  seletores.forEach(seletor => {
+    document.querySelectorAll(seletor).forEach(dia => {
+      if (!dia.dataset.dropConfigured) {
+        configurarDropZone(dia);
+        dia.dataset.dropConfigured = 'true';
+        diasEncontrados++;
+      }
+    });
+  });
+  
+  console.log(`📅 ${diasEncontrados} dias configurados como drop zones`);
+}
+
+function configurarDropZone(elemento) {
+  elemento.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    elemento.classList.add('drop-zone');
+  });
+  
+  elemento.addEventListener('dragleave', (e) => {
+    if (!elemento.contains(e.relatedTarget)) {
+      elemento.classList.remove('drop-zone');
+    }
+  });
+  
+  elemento.addEventListener('drop', (e) => {
+    e.preventDefault();
+    elemento.classList.remove('drop-zone');
+    
+    const listaId = e.dataTransfer.getData('text/plain');
+    const data = extrairDataDoElemento(elemento);
+    
+    if (data && listaId) {
+      moverListaParaData(listaId, data, elemento);
+    } else {
+      console.log('❌ Erro: data ou listaId não encontrados', { data, listaId });
+    }
+  });
+}
+
+// FUNÇÃO PARA EXTRAIR DATA DO ELEMENTO
+function extrairDataDoElemento(elemento) {
+  // Procura atributos data-*
+  const dataAttr = elemento.dataset.data || elemento.dataset.date || 
+                  elemento.dataset.day || elemento.getAttribute('data-date');
+  if (dataAttr) {
+    console.log(`📅 Data encontrada no atributo: ${dataAttr}`);
+    return dataAttr;
+  }
+  
+  // Procura no texto do elemento
+  const texto = elemento.textContent.trim();
+  
+  // Se é só um número (dia)
+  const numerodia = texto.match(/^\d+$/);
+  if (numerodia) {
+    const dia = numerodia[0].padStart(2, '0');
+    const agora = new Date();
+    const mes = String(agora.getMonth() + 1).padStart(2, '0');
+    const ano = agora.getFullYear();
+    const dataCompleta = `${dia}/${mes}/${ano}`;
+    console.log(`📅 Data construída do dia: ${dataCompleta}`);
+    return dataCompleta;
+  }
+  
+  // Procura data completa no texto
+  const dataCompleta = texto.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+  if (dataCompleta) {
+    const dataFormatada = `${dataCompleta[1].padStart(2, '0')}/${dataCompleta[2].padStart(2, '0')}/${dataCompleta[3]}`;
+    console.log(`📅 Data encontrada no texto: ${dataFormatada}`);
+    return dataFormatada;
+  }
+  
+  console.log(`⚠️ Não foi possível extrair data de: "${texto}"`);
+  return null;
+}
+
+// FUNÇÃO PARA MOVER LISTA PARA DATA
+function moverListaParaData(listaId, data, elemento) {
+  const lista = window.LISTAS.find(l => l.id === listaId);
+  if (!lista) {
+    console.error('Lista não encontrada:', listaId);
+    return;
+  }
+  
+  const dataFormatada = formatarData(data);
+  lista.dataProducao = dataFormatada;
+  
+  try {
+    localStorage.setItem('VILMA_LISTAS', JSON.stringify(window.LISTAS));
+    console.log(`✅ Lista ${lista.nome} agendada para ${dataFormatada}`);
+    
+    // Atualiza visual
+    mostrarListasNoCalendario();
+    
+    // Adiciona visual no dia (se possível)
+    if (elemento) {
+      const indicator = document.createElement('div');
+      indicator.style.cssText = `
+        background: var(--rose); color: white; font-size: 10px;
+        padding: 2px 4px; border-radius: 3px; margin-top: 2px;
+      `;
+      indicator.textContent = lista.nome.replace('Lista ', '');
+      elemento.appendChild(indicator);
+    }
+    
+    alert(`✅ ${lista.nome} agendada para ${dataFormatada}!`);
+  } catch(e) {
+    console.error('Erro ao salvar:', e);
+    alert('❌ Erro ao agendar lista');
+  }
+}
+
+// FUNÇÕES DE AÇÕES DOS CARDS
+window.imprimirListaCard = function(listaId) {
+  const lista = window.LISTAS.find(l => l.id === listaId);
+  if (!lista || !lista.produtos) {
+    alert('❌ Lista ou produtos não encontrados');
+    return;
+  }
+  
+  if (typeof abrirImpressaoLimpa === 'function') {
+    abrirImpressaoLimpa(lista.produtos);
+  } else {
+    // Fallback: impressão manual
+    abrirImpressaoManual(lista.produtos);
+  }
+};
+
+window.editarListaCard = function(listaId) {
+  const lista = window.LISTAS.find(l => l.id === listaId);
+  if (!lista) return;
+  
+  const novoNome = prompt(`Editar nome da lista:`, lista.nome);
+  if (novoNome && novoNome.trim() && novoNome !== lista.nome) {
+    lista.nome = novoNome.trim();
+    
+    try {
+      localStorage.setItem('VILMA_LISTAS', JSON.stringify(window.LISTAS));
+      mostrarListasNoCalendario();
+      alert('✅ Lista editada!');
+    } catch(e) {
+      alert('❌ Erro ao salvar');
+    }
+  }
+};
+
+window.excluirListaCard = function(listaId) {
+  const lista = window.LISTAS.find(l => l.id === listaId);
+  if (!lista) return;
+  
+  if (confirm(`Excluir ${lista.nome}?\n\nEsta ação não pode ser desfeita.`)) {
+    window.LISTAS = window.LISTAS.filter(l => l.id !== listaId);
+    
+    try {
+      localStorage.setItem('VILMA_LISTAS', JSON.stringify(window.LISTAS));
+      mostrarListasNoCalendario();
+      alert('✅ Lista excluída!');
+    } catch(e) {
+      alert('❌ Erro ao excluir');
+    }
+  }
+};
+
+// FUNÇÃO AUXILIAR PARA FORMATAR DATA
+function formatarData(data) {
+  if (!data) return null;
+  
+  if (data.match(/^\d{2}\/\d{2}\/\d{4}$/)) return data;
+  
+  const match = data.match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/);
+  if (match) {
+    return `${match[1].padStart(2, '0')}/${match[2].padStart(2, '0')}/${match[3]}`;
+  }
+  
+  return data;
+}
+
+console.log('🎯 Sistema completo de calendário carregado!');
 </script>
