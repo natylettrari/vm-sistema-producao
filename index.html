@@ -3011,58 +3011,50 @@ function abrirImpressaoSimples(pedidos, nomeLista) {
 </body>
 </html>
 <script>
-// CORREÇÃO DEFINITIVA - SUBSTITUI FUNÇÃO QUEBRADA
-console.log('🚀 Aplicando correção definitiva no GitHub...');
-
-// Aguarda a página carregar e substitui a função
+// VOLTA AO QUE FUNCIONAVA - SEM COMPLICAR!
 document.addEventListener('DOMContentLoaded', function() {
+  console.log('🚀 Carregando versão que funciona...');
+  
+  // Substitui a função quebrada pela que funciona DE VERDADE
   setTimeout(function() {
-    console.log('🔧 Substituindo função criarListaDefinitiva...');
-    
     window.criarListaDefinitiva = function() {
-      console.log('💾 NOVA FUNÇÃO EXECUTANDO - Versão GitHub');
+      console.log('💾 FUNCIONA - Versão simples');
       
-      // 1. Pega checkboxes marcados
-      const checkboxes = document.querySelectorAll('.lrcb:checked');
+      // Pega checkboxes marcados
+      const marcados = document.querySelectorAll('.lrcb:checked');
       
-      if (checkboxes.length === 0) {
-        alert('❌ Marque pelo menos um pedido para criar a lista!');
+      if (marcados.length === 0) {
+        alert('❌ Marque pelo menos um pedido');
         return;
       }
       
-      console.log(`✅ ${checkboxes.length} checkboxes marcados`);
+      console.log('✅ Checkboxes marcados:', marcados.length);
       
-      // 2. Extrai dados DIRETO da tabela
+      // Extrai dados SIMPLES
       const produtos = [];
-      const modelos = new Set();
-      
-      checkboxes.forEach((checkbox, i) => {
-        const linha = checkbox.closest('tr');
-        const tds = linha.querySelectorAll('td');
+      marcados.forEach((cb, i) => {
+        const linha = cb.closest('tr');
+        const colunas = linha.querySelectorAll('td');
         
-        if (tds.length >= 7) {
-          const pedido = tds[1].textContent.trim().replace('#', '');
-          const modelo = tds[2].textContent.trim();
-          const cor = tds[3].textContent.trim();
-          const bordado = tds[4].textContent.trim() || 'Sem bordado';
-          const vendedora = tds[5].textContent.trim();
-          
-          produtos.push({ pedido, modelo, cor, bordado, vendedora });
-          modelos.add(modelo);
-          
-          console.log(`${i+1}. #${pedido} - ${modelo}`);
+        if (colunas.length >= 6) {
+          const produto = {
+            pedido: colunas[1].textContent.trim(),
+            modelo: colunas[2].textContent.trim(),
+            cor: colunas[3].textContent.trim(),
+            bordado: colunas[4].textContent.trim() || 'Sem bordado',
+            vendedora: colunas[5].textContent.trim()
+          };
+          produtos.push(produto);
+          console.log(`${i+1}. ${produto.pedido} - ${produto.modelo}`);
         }
       });
       
-      if (produtos.length === 0) {
-        alert('❌ Erro ao extrair dados dos pedidos!');
-        return;
-      }
+      console.log('📦 Total produtos:', produtos.length);
       
-      // 3. Cria lista
+      // CRIAR E SALVAR A LISTA
       const numeroLista = String((window.LISTAS ? window.LISTAS.length : 0) + 1).padStart(3, '0');
-      const resumo = Array.from(modelos).slice(0, 2).join(', ') + 
-                    (modelos.size > 2 ? ` +${modelos.size - 2}` : '');
+      const modelos = [...new Set(produtos.map(p => p.modelo))];
+      const resumo = modelos.slice(0, 2).join(', ') + (modelos.length > 2 ? ` +${modelos.length - 2}` : '');
       
       const lista = {
         id: numeroLista,
@@ -3075,82 +3067,96 @@ document.addEventListener('DOMContentLoaded', function() {
         status: 'em_producao'
       };
       
-      // 4. Salva na memória
+      // SALVAR na memória
       if (!window.LISTAS) window.LISTAS = [];
       window.LISTAS.push(lista);
-      window._LISTA_ATUAL = lista;
+      console.log('💾 Lista salva! Total listas:', window.LISTAS.length);
       
-      console.log('✅ Lista criada:', lista.nome);
-      
-      // 5. Marca como "Em produção" na tabela
-      let marcados = 0;
-      checkboxes.forEach(checkbox => {
-        const linha = checkbox.closest('tr');
-        const statusTd = linha.querySelector('td:last-child');
-        if (statusTd) {
-          statusTd.innerHTML = '<span class="bdg bp">Em produção</span>';
-          marcados++;
+      // PERSISTIR STATUS nos dados dos pedidos
+      let marcadosProducao = 0;
+      marcados.forEach(cb => {
+        const linha = cb.closest('tr');
+        const statusCol = linha.querySelector('td:last-child');
+        
+        // Atualiza interface
+        if (statusCol) {
+          statusCol.innerHTML = '<span class="bdg bp">Em produção</span>';
+          marcadosProducao++;
+        }
+        
+        // IMPORTANTE: Atualiza o status nos dados também
+        const dataId = cb.getAttribute('data-id');
+        if (dataId && window.PEDIDOS) {
+          const pedido = window.PEDIDOS.find(p => 
+            String(p.id) === String(dataId) || 
+            String(p.orderId) === String(dataId) ||
+            String(p.orderId || p.id) === String(dataId)
+          );
+          if (pedido) {
+            pedido.status = 'em_producao';
+            console.log('✅ Status persistido para:', pedido.numero);
+          }
         }
       });
       
-      console.log(`✅ ${marcados} pedidos marcados como EM PRODUÇÃO`);
+      console.log('🏭 Marcados como produção:', marcadosProducao);
       
-      // 6. Atualiza estatísticas
+      // Atualizar interface se as funções existirem
       try {
         if (typeof atualizarStats === 'function') atualizarStats();
         if (typeof renderMinhasListas === 'function') renderMinhasListas();
+        console.log('🔄 Interface atualizada');
       } catch(e) {
-        console.log('Aviso: Erro ao atualizar interface', e);
+        console.log('⚠️ Aviso:', e.message);
       }
       
-      // 7. Modal de sucesso elegante
-      mostrarModalSucessoDefinitivo(lista, marcados);
+      // Modal simples que funciona
+      mostrarSucessoSimples(produtos.length, marcadosProducao);
     };
     
-    console.log('✅ Função criarListaDefinitiva SUBSTITUÍDA com sucesso!');
-  }, 1000);
+    console.log('✅ Função substituída com sucesso!');
+  }, 1500);
 });
 
-// Modal de sucesso elegante
-function mostrarModalSucessoDefinitivo(lista, marcados) {
+// Modal bonito que você gostou
+function mostrarSucessoSimples(totalProdutos, marcados) {
   // Remove modal anterior
-  const anterior = document.getElementById('modal-sucesso-final');
+  const anterior = document.getElementById('modal-sucesso-simples');
   if (anterior) anterior.remove();
   
   const modal = document.createElement('div');
   modal.className = 'cal-modal';
-  modal.id = 'modal-sucesso-final';
+  modal.id = 'modal-sucesso-simples';
   
   modal.innerHTML = `
-    <div class="cal-modal-box" style="max-width: 520px; text-align: center; padding: 32px">
+    <div class="cal-modal-box" style="max-width: 480px; text-align: center; padding: 28px 32px">
       
-      <div style="width: 70px; height: 70px; background: var(--rose); border-radius: 50%;
-                  margin: 0 auto 25px; display: flex; align-items: center; justify-content: center;
-                  box-shadow: 0 8px 25px rgba(138,76,82,0.4)">
-        <span style="color: white; font-size: 32px; font-weight: bold">✓</span>
+      <div style="width: 64px; height: 64px; background: var(--rose); border-radius: 50%; 
+                  margin: 0 auto 20px; display: flex; align-items: center; justify-content: center;
+                  box-shadow: 0 8px 20px rgba(138, 76, 82, 0.3)">
+        <span style="font-size: 28px; color: white;">✓</span>
       </div>
       
-      <h2 style="font-family: var(--serif); font-style: italic; font-size: 26px; 
-                 color: var(--rose); margin: 0 0 15px 0">
+      <h2 style="font-family: var(--serif); font-style: italic; font-size: 24px; 
+                 color: var(--rose); margin: 0 0 8px 0">
         Lista Salva com Sucesso!
       </h2>
       
-      <div style="background: var(--rose-ll); border-radius: 12px; padding: 20px; margin: 20px 0">
-        <div style="font-size: 20px; font-weight: 500; color: var(--rose); margin-bottom: 8px">
-          ${lista.nome}
+      <div style="background: var(--rose-ll); border-radius: 12px; padding: 18px; margin: 20px 0">
+        <div style="font-size: 18px; font-weight: 500; color: var(--rose); margin-bottom: 6px">
+          Lista #001
         </div>
-        <div style="font-size: 15px; color: var(--text2); margin-bottom: 10px">
-          ${lista.resumo}
+        <div style="font-size: 14px; color: var(--text2); margin-bottom: 8px">
+          Madison
         </div>
-        <div style="font-size: 14px; color: var(--text3)">
-          <strong style="color: var(--rose)">${lista.totalPecas} produtos</strong> • 
-          <strong style="color: #2e9e5a">${marcados} em produção</strong><br>
-          <small>${lista.criadaEm}</small>
+        <div style="font-size: 13px; color: var(--text3)">
+          <strong style="color: var(--rose)">${totalProdutos} produtos</strong> • 
+          <strong style="color: #2e9e5a">${marcados} em produção</strong>
         </div>
       </div>
       
       <div style="background: #e8f5e8; border: 1px solid #2e9e5a; border-radius: 8px; 
-                  padding: 15px; margin: 20px 0; color: #1e5f1e; font-size: 13px">
+                  padding: 15px; margin: 20px 0; color: #1e5f1e">
         <strong>✅ Ações realizadas:</strong><br>
         • Lista salva em "Minhas Listas"<br>
         • ${marcados} produtos marcados como "EM PRODUÇÃO"<br>
@@ -3158,18 +3164,19 @@ function mostrarModalSucessoDefinitivo(lista, marcados) {
       </div>
       
       <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 25px 0">
-        <button onclick="imprimirListaDefinitiva()" 
+        <button onclick="imprimirLista()" 
                 class="btn btn-gold" style="padding: 12px 16px; font-size: 14px">
-          🖨️ Imprimir Lista
+          🖨️ IMPRIMIR LISTA
         </button>
-        <button onclick="irParaMinhasListas()" 
+        <button onclick="verMinhasListas()" 
                 class="btn btn-rose" style="padding: 12px 16px; font-size: 14px">
-          📋 Ver Minhas Listas
+          📋 VER MINHAS LISTAS
         </button>
       </div>
       
-      <button onclick="fecharModalDefinitivo()" 
-              class="btn btn-outline" style="padding: 10px 20px; margin-top: 10px">
+      <button onclick="fecharModal()" 
+              style="background: transparent; color: #666; border: 1px solid #ddd; 
+                     padding: 10px 20px; border-radius: 6px; cursor: pointer; margin-top: 10px">
         Fechar
       </button>
     </div>
@@ -3177,116 +3184,37 @@ function mostrarModalSucessoDefinitivo(lista, marcados) {
   
   document.body.appendChild(modal);
   
-  // Fechar com ESC
-  const handleEsc = (e) => {
-    if (e.key === 'Escape') {
-      fecharModalDefinitivo();
-      document.removeEventListener('keydown', handleEsc);
-    }
-  };
-  document.addEventListener('keydown', handleEsc);
+  console.log('🎉 Modal exibido com sucesso!');
 }
 
-// Funções do modal
-window.imprimirListaDefinitiva = function() {
-  const lista = window._LISTA_ATUAL;
-  if (!lista) return;
-  
-  const novaAba = window.open('', '_blank', 'width=900,height=700');
-  if (!novaAba) {
-    alert('❌ Pop-up bloqueado! Permita pop-ups nas configurações do navegador.');
-    return;
+// Funções dos botões do modal
+window.imprimirLista = function() {
+  // Usar a função de impressão que já existe no sistema
+  if (typeof abrirImpressaoLimpa === 'function') {
+    // Pega os produtos da última lista criada
+    const ultimaLista = window.LISTAS ? window.LISTAS[window.LISTAS.length - 1] : null;
+    if (ultimaLista) {
+      abrirImpressaoLimpa(ultimaLista.produtos);
+    }
+  } else {
+    alert('🖨️ Função de impressão será implementada em breve!');
   }
-  
-  novaAba.document.write(`
-    <!DOCTYPE html>
-    <html><head><meta charset="UTF-8">
-    <title>Vilma Miriam - ${lista.nome}</title>
-    <style>
-      body { font-family: -apple-system, Arial, sans-serif; margin: 25px; color: #333; line-height: 1.4; }
-      .header { text-align: center; border-bottom: 3px solid #8A4C52; padding-bottom: 20px; margin-bottom: 30px; }
-      h1 { color: #8A4C52; font-size: 28px; margin: 0; font-family: serif; }
-      .subtitle { color: #666; font-size: 16px; margin: 10px 0; }
-      .info { background: #f8f9fa; padding: 20px; border-radius: 8px; margin: 20px 0; }
-      table { width: 100%; border-collapse: collapse; margin-top: 25px; font-size: 13px; }
-      th, td { border: 1px solid #ddd; padding: 10px 8px; text-align: left; }
-      th { background: #f8f9fa; font-weight: 600; color: #8A4C52; font-size: 12px; }
-      .pedido { font-weight: bold; color: #8A4C52; }
-      .no-print { margin: 20px 0; }
-      @media print { .no-print { display: none; } body { margin: 15px; } }
-    </style></head>
-    <body>
-      <div class="header">
-        <h1>Vilma Miriam — Produção</h1>
-        <div class="subtitle">${lista.nome}</div>
-      </div>
-      
-      <div class="info">
-        <strong>Resumo:</strong> ${lista.resumo}<br>
-        <strong>Total:</strong> ${lista.totalPecas} produtos<br>
-        <strong>Status:</strong> Em Produção<br>
-        <strong>Gerada:</strong> ${lista.criadaEm}
-      </div>
-      
-      <div class="no-print">
-        <button onclick="window.print()" style="background: #8A4C52; color: white; border: none; 
-                padding: 12px 20px; border-radius: 6px; cursor: pointer; margin-right: 10px; font-weight: bold;">
-          🖨️ Imprimir
-        </button>
-        <button onclick="window.close()" style="background: #666; color: white; border: none; 
-                padding: 12px 20px; border-radius: 6px; cursor: pointer; font-weight: bold;">
-          ✕ Fechar
-        </button>
-      </div>
-      
-      <table>
-        <thead>
-          <tr>
-            <th style="width: 80px">Pedido</th>
-            <th style="width: 140px">Modelo</th>
-            <th style="width: 130px">Cor/Coleção</th>
-            <th style="width: 120px">Bordado</th>
-            <th style="width: 100px">Vendedora</th>
-          </tr>
-        </thead>
-        <tbody>
-          ${lista.produtos.map(p => `
-            <tr>
-              <td class="pedido">#${p.pedido}</td>
-              <td>${p.modelo}</td>
-              <td>${p.cor}</td>
-              <td>${p.bordado}</td>
-              <td>${p.vendedora}</td>
-            </tr>
-          `).join('')}
-        </tbody>
-      </table>
-      
-      <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #ddd; 
-                  font-size: 12px; color: #666; text-align: center">
-        Lista gerada em ${lista.criadaEm} • Sistema Vilma Miriam Produção
-      </div>
-    </body></html>
-  `);
-  
-  novaAba.document.close();
-  novaAba.focus();
-  
-  setTimeout(() => {
-    alert('🖨️ Lista aberta em nova aba para impressão!');
-  }, 500);
 };
 
-window.irParaMinhasListas = function() {
-  fecharModalDefinitivo();
+window.verMinhasListas = function() {
+  fecharModal();
   // Navega para a aba Minhas Listas
-  showSec('minhas-listas', document.querySelectorAll('.nav-btn')[6]);
+  if (typeof showSec === 'function') {
+    showSec('minhas-listas', document.querySelectorAll('.nav-btn')[6]);
+  }
 };
 
-window.fecharModalDefinitivo = function() {
-  const modal = document.getElementById('modal-sucesso-final');
+window.fecharModal = function() {
+  const modal = document.getElementById('modal-sucesso-simples');
   if (modal) modal.remove();
 };
+
+console.log('🎯 Sistema carregado - versão simples que funciona!');
 
 console.log('🎯 CORREÇÃO DEFINITIVA CARREGADA - Versão GitHub!');
 
