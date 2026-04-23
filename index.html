@@ -1440,7 +1440,7 @@ function renderLista(peds,grupos,ordBy,de,ate) {
       </div>
       <div style="display:flex;gap:7px;flex-wrap:wrap">
         <button class="btn btn-outline" onclick="window.print()">Imprimir prévia</button>
-        <button class="btn btn-rose" onclick="criarListaDefinitiva()">🎯 CRIAR LISTA FINAL</button>
+        <button class="btn btn-rose" onclick="criarListaDefinitiva()">💾 SALVAR LISTA</button>
         <button class="btn btn-green" onclick="confirmarProducaoEImprimir()" style="display:none" id="btn-confirmar-producao">✅ Confirmar Produção & Imprimir</button>
       </div>
     </div>
@@ -3166,90 +3166,337 @@ console.log('✅ Solução nova carregada - use criarListaNova()');
 </script>
 
 <script>
-// CORREÇÃO: SUBSTITUIR FUNÇÃO AUTOMATICAMENTE
-console.log('🔄 Carregando substituição da função...');
+// NOVO FLUXO: SALVAR LISTA → MODAL → OPÇÕES
+console.log('🔄 Carregando novo fluxo de criação de listas...');
 
-// Aguarda a página carregar completamente
 setTimeout(function() {
-  // SUBSTITUI a função quebrada automaticamente
+  // SUBSTITUI por fluxo elegante
   window.criarListaDefinitiva = function() {
-    console.log('🎯 NOVA FUNÇÃO EXECUTANDO (substituiu a antiga)');
-    
+    console.log('💾 EXECUTANDO: Salvar Lista');
+    salvarListaElegante();
+  };
+
+  // FUNÇÃO PRINCIPAL: Salvar lista sem mexer nos status
+  window.salvarListaElegante = function() {
     const marcados = document.querySelectorAll('.lrcb:checked');
-    console.log('Checkboxes marcados:', marcados.length);
+    console.log('Checkboxes selecionados:', marcados.length);
     
     if (marcados.length === 0) {
-      alert('❌ Marque pelo menos um pedido');
+      mostrarToast('❌ Selecione pelo menos um pedido', 'erro');
       return;
     }
     
+    // Extrair dados das linhas
     const produtos = [];
+    const modelos = new Set();
+    
     marcados.forEach((checkbox, index) => {
       const linha = checkbox.closest('tr');
       const tds = linha.querySelectorAll('td');
       
       if (tds.length >= 6) {
+        const modelo = tds[2].textContent.trim();
         produtos.push({
           pedido: tds[1].textContent.trim(),
-          modelo: tds[2].textContent.trim(),
+          modelo: modelo,
           cor: tds[3].textContent.trim(),
           bordado: tds[4].textContent.trim() || 'Sem bordado',
           vendedora: tds[5].textContent.trim()
         });
-        console.log(`✓ ${index + 1}. ${tds[1].textContent.trim()} - ${tds[2].textContent.trim()}`);
+        modelos.add(modelo);
+        console.log(`✓ ${index + 1}. #${tds[1].textContent.trim()} - ${modelo}`);
       }
     });
     
-    console.log('✅ Total produtos extraídos:', produtos.length);
-    
     // Criar lista
-    const numeroLista = (window.LISTAS ? window.LISTAS.length : 0) + 1;
+    const numeroLista = String((window.LISTAS ? window.LISTAS.length : 0) + 1).padStart(3, '0');
+    const modelosResumo = Array.from(modelos).slice(0, 2).join(', ') + 
+                         (modelos.size > 2 ? ` +${modelos.size - 2}` : '');
+    
     const lista = {
       id: numeroLista,
       numero: numeroLista,
       nome: `Lista #${numeroLista}`,
+      resumo: modelosResumo,
       produtos: produtos,
       totalPecas: produtos.length,
-      dataCriacao: new Date().toLocaleDateString('pt-BR')
+      dataCriacao: new Date().toLocaleDateString('pt-BR'),
+      horaCriacao: new Date().toLocaleTimeString('pt-BR', {hour: '2-digit', minute: '2-digit'}),
+      status: 'salva' // Não é produção ainda
     };
     
-    // Salvar
+    // Salvar localmente
     if (!window.LISTAS) window.LISTAS = [];
     window.LISTAS.push(lista);
-    console.log('✅ Lista salva:', lista.nome, '- Total listas:', window.LISTAS.length);
     
-    // Marcar produção
+    // Guarda para ações posteriores
+    window._LISTA_ATUAL = lista;
+    
+    console.log('✅ Lista salva:', lista.nome, '-', lista.totalPecas, 'produtos');
+    
+    // Mostrar modal elegante
+    mostrarModalSucesso(lista);
+  };
+
+  // MODAL DE SUCESSO com botões elegantes
+  window.mostrarModalSucesso = function(lista) {
+    // Remove modal anterior
+    const anterior = document.getElementById('modal-lista-sucesso');
+    if (anterior) anterior.remove();
+    
+    const modal = document.createElement('div');
+    modal.className = 'cal-modal';
+    modal.id = 'modal-lista-sucesso';
+    
+    modal.innerHTML = `
+      <div class="cal-modal-box" style="max-width: 480px; text-align: center; padding: 28px 32px">
+        <!-- Ícone de sucesso -->
+        <div style="width: 64px; height: 64px; background: var(--rose); border-radius: 50%; 
+                    margin: 0 auto 20px; display: flex; align-items: center; justify-content: center;
+                    box-shadow: 0 8px 20px rgba(138, 76, 82, 0.3)">
+          <span style="font-size: 28px; color: white;">✓</span>
+        </div>
+        
+        <!-- Título -->
+        <h2 style="font-family: var(--serif); font-style: italic; font-size: 24px; 
+                   color: var(--rose); margin: 0 0 8px 0">
+          Lista Salva com Sucesso!
+        </h2>
+        
+        <!-- Detalhes da lista -->
+        <div style="background: var(--rose-ll); border-radius: 12px; padding: 18px; margin: 20px 0">
+          <div style="font-size: 18px; font-weight: 500; color: var(--rose); margin-bottom: 6px">
+            Lista #${lista.numero}
+          </div>
+          <div style="font-size: 14px; color: var(--text2); margin-bottom: 8px">
+            ${lista.resumo}
+          </div>
+          <div style="font-size: 13px; color: var(--text3)">
+            <strong style="color: var(--rose)">${lista.totalPecas} produtos</strong> • 
+            ${lista.dataCriacao} às ${lista.horaCriacao}
+          </div>
+        </div>
+        
+        <!-- Produtos na lista (resumo) -->
+        <div style="background: var(--bg3); border-radius: 8px; padding: 12px; margin: 16px 0; 
+                    max-height: 120px; overflow-y: auto; text-align: left">
+          <div style="font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; 
+                     color: var(--text3); margin-bottom: 8px; text-align: center">
+            Produtos Selecionados
+          </div>
+          ${lista.produtos.slice(0, 5).map((p, i) => `
+            <div style="font-size: 12px; padding: 3px 0; border-bottom: 1px solid var(--border)">
+              <span style="font-weight: 500; color: var(--rose)">#${p.pedido}</span>
+              <span style="color: var(--text2)"> — ${p.modelo}</span>
+              <span style="color: var(--text3); font-size: 11px"> • ${p.cor}</span>
+            </div>
+          `).join('')}
+          ${lista.produtos.length > 5 ? `
+            <div style="font-size: 11px; color: var(--text3); text-align: center; 
+                       margin-top: 6px; font-style: italic">
+              + mais ${lista.produtos.length - 5} produtos...
+            </div>
+          ` : ''}
+        </div>
+        
+        <!-- Botões de ação -->
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 24px">
+          <button onclick="imprimirListaAtual()" 
+                  style="background: var(--gold); color: white; border: none; border-radius: 8px; 
+                         padding: 12px 16px; font-size: 13px; font-weight: 500; cursor: pointer;
+                         transition: all 0.2s; display: flex; align-items: center; justify-content: center; gap: 6px"
+                  onmouseover="this.style.background='#a8834a'" 
+                  onmouseout="this.style.background='var(--gold)'">
+            🖨️ Imprimir Lista
+          </button>
+          <button onclick="marcarComoProducao()" 
+                  style="background: var(--rose); color: white; border: none; border-radius: 8px; 
+                         padding: 12px 16px; font-size: 13px; font-weight: 500; cursor: pointer;
+                         transition: all 0.2s; display: flex; align-items: center; justify-content: center; gap: 6px"
+                  onmouseover="this.style.background='#7a3d44'" 
+                  onmouseout="this.style.background='var(--rose)'">
+            ✅ Marcar Produção
+          </button>
+        </div>
+        
+        <!-- Botão secundário -->
+        <button onclick="fecharModalSucesso()" 
+                style="background: transparent; color: var(--text3); border: 1px solid var(--border2); 
+                       border-radius: 8px; padding: 8px 16px; font-size: 12px; cursor: pointer;
+                       margin-top: 12px; transition: all 0.2s"
+                onmouseover="this.style.borderColor='var(--rose)'; this.style.color='var(--rose)'" 
+                onmouseout="this.style.borderColor='var(--border2)'; this.style.color='var(--text3)'">
+          Fechar
+        </button>
+      </div>
+    `;
+    
+    document.body.appendChild(modal);
+    
+    // Foco no primeiro botão
+    setTimeout(() => {
+      const btn = modal.querySelector('button');
+      if (btn) btn.focus();
+    }, 100);
+    
+    // Fechar com ESC
+    const handleEsc = (e) => {
+      if (e.key === 'Escape') {
+        fecharModalSucesso();
+        document.removeEventListener('keydown', handleEsc);
+      }
+    };
+    document.addEventListener('keydown', handleEsc);
+  };
+
+  // IMPRIMIR LISTA
+  window.imprimirListaAtual = function() {
+    if (!window._LISTA_ATUAL) return;
+    
+    const lista = window._LISTA_ATUAL;
+    console.log('🖨️ Imprimindo lista:', lista.numero);
+    
+    // Abre nova aba para impressão
+    const novaAba = window.open('', '_blank', 'width=800,height=600');
+    
+    if (!novaAba) {
+      mostrarToast('❌ Pop-up bloqueado. Permita pop-ups e tente novamente.', 'erro');
+      return;
+    }
+    
+    let html = '<!DOCTYPE html><html><head><meta charset="UTF-8">';
+    html += '<title>Lista de Produção #' + lista.numero + '</title>';
+    html += '<style>';
+    html += 'body{font-family:-apple-system,BlinkMacSystemFont,sans-serif;margin:20px;font-size:12px}';
+    html += '.header{text-align:center;margin-bottom:30px;border-bottom:2px solid #8A4C52;padding-bottom:15px}';
+    html += 'h1{color:#8A4C52;margin:0;font-size:24px}h2{color:#666;margin:5px 0 0 0;font-weight:normal}';
+    html += 'table{width:100%;border-collapse:collapse;margin-top:20px}';
+    html += 'th,td{border:1px solid #ddd;padding:8px;text-align:left}th{background:#f8f9fa;font-weight:600}';
+    html += '.meta{background:#f8f9fa;padding:15px;border-radius:8px;margin-bottom:20px}';
+    html += '@media print{.no-print{display:none}body{margin:10px}}';
+    html += '</style></head><body>';
+    
+    html += '<div class="header">';
+    html += '<h1>Vilma Miriam — Produção</h1>';
+    html += '<h2>Lista #' + lista.numero + '</h2>';
+    html += '</div>';
+    
+    html += '<div class="meta">';
+    html += '<strong>Resumo:</strong> ' + lista.resumo + '<br>';
+    html += '<strong>Total:</strong> ' + lista.totalPecas + ' produtos<br>';
+    html += '<strong>Criada:</strong> ' + lista.dataCriacao + ' às ' + lista.horaCriacao;
+    html += '</div>';
+    
+    html += '<div class="no-print" style="margin-bottom:15px">';
+    html += '<button onclick="window.print()" style="background:#8A4C52;color:white;border:none;padding:8px 15px;border-radius:4px;margin-right:10px">Imprimir</button>';
+    html += '<button onclick="window.close()" style="background:#666;color:white;border:none;padding:8px 15px;border-radius:4px">Fechar</button>';
+    html += '</div>';
+    
+    html += '<table><thead><tr>';
+    html += '<th>Pedido</th><th>Modelo</th><th>Cor/Coleção</th><th>Bordado</th><th>Vendedora</th>';
+    html += '</tr></thead><tbody>';
+    
+    lista.produtos.forEach(p => {
+      html += '<tr>';
+      html += '<td><strong>#' + p.pedido + '</strong></td>';
+      html += '<td>' + p.modelo + '</td>';
+      html += '<td>' + p.cor + '</td>';
+      html += '<td>' + p.bordado + '</td>';
+      html += '<td>' + p.vendedora + '</td>';
+      html += '</tr>';
+    });
+    
+    html += '</tbody></table></body></html>';
+    
+    novaAba.document.write(html);
+    novaAba.document.close();
+    novaAba.focus();
+    
+    mostrarToast('🖨️ Lista aberta para impressão', 'sucesso');
+  };
+
+  // MARCAR COMO PRODUÇÃO
+  window.marcarComoProducao = function() {
+    if (!window._LISTA_ATUAL) return;
+    
+    const lista = window._LISTA_ATUAL;
+    
+    if (!confirm(`Confirmar produção da Lista #${lista.numero}?\\n\\nIsso irá marcar ${lista.totalPecas} produtos como "EM PRODUÇÃO" na tabela principal.`)) {
+      return;
+    }
+    
+    console.log('✅ Marcando produção para lista:', lista.numero);
+    
+    // Pegar todos os checkboxes marcados (ainda estão marcados)
+    const marcados = document.querySelectorAll('.lrcb:checked');
     let marcadosProducao = 0;
+    
     marcados.forEach(checkbox => {
       const linha = checkbox.closest('tr');
-      const statusTd = linha.querySelector('td:last-child');
+      const statusTd = linha.querySelector('td:last-child .bdg');
       if (statusTd) {
-        statusTd.innerHTML = '<span class="status em_producao">Em produção</span>';
+        statusTd.className = 'bdg bp';
+        statusTd.textContent = 'Em produção';
         marcadosProducao++;
       }
     });
-    console.log('✅ Produtos marcados em produção:', marcadosProducao);
     
-    // Resultado
-    alert(`✅ SUCESSO!\n\n${lista.nome}\n${lista.totalPecas} produtos\n\n✓ Lista salva em LISTAS\n✓ ${marcadosProducao} marcados como EM PRODUÇÃO`);
+    // Atualizar status da lista
+    lista.status = 'em_producao';
+    lista.iniciadaProducao = new Date().toLocaleString('pt-BR');
     
-    // Atualizar interface
+    // Atualizar estatísticas
     try {
-      if (typeof renderMinhasListas === 'function') {
-        renderMinhasListas();
-        console.log('✅ Interface Minhas Listas atualizada');
-      }
       if (typeof atualizarStats === 'function') {
         atualizarStats();
-        console.log('✅ Estatísticas atualizadas');
+      }
+      if (typeof renderMinhasListas === 'function') {
+        renderMinhasListas();
       }
     } catch(e) {
-      console.log('⚠️ Aviso:', e.message);
+      console.log('Erro ao atualizar interface:', e);
     }
     
-    console.log('🎯 PROCESSO CONCLUÍDO COM SUCESSO');
+    fecharModalSucesso();
+    mostrarToast(`✅ ${marcadosProducao} produtos marcados como EM PRODUÇÃO`, 'sucesso');
+    
+    console.log('🏭 Produção iniciada:', marcadosProducao, 'produtos');
   };
-  
-  console.log('✅ Função criarListaDefinitiva SUBSTITUÍDA com sucesso');
+
+  // FECHAR MODAL
+  window.fecharModalSucesso = function() {
+    const modal = document.getElementById('modal-lista-sucesso');
+    if (modal) modal.remove();
+  };
+
+  // TOAST ELEGANTE
+  window.mostrarToast = function(mensagem, tipo = 'info') {
+    const toast = document.createElement('div');
+    const cores = {
+      sucesso: {bg: '#d4edda', border: '#c3e6cb', text: '#155724'},
+      erro: {bg: '#f8d7da', border: '#f5c6cb', text: '#721c24'},
+      info: {bg: '#d1ecf1', border: '#bee5eb', text: '#0c5460'}
+    };
+    const cor = cores[tipo] || cores.info;
+    
+    toast.style.cssText = \`
+      position: fixed; top: 20px; right: 20px; z-index: 99999;
+      background: \${cor.bg}; border: 1px solid \${cor.border}; color: \${cor.text};
+      padding: 12px 18px; border-radius: 8px; font-size: 14px; font-weight: 500;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15); transform: translateX(400px);
+      transition: transform 0.3s ease; max-width: 350px;
+    \`;
+    
+    toast.textContent = mensagem;
+    document.body.appendChild(toast);
+    
+    setTimeout(() => { toast.style.transform = 'translateX(0)'; }, 50);
+    setTimeout(() => { 
+      toast.style.transform = 'translateX(400px)';
+      setTimeout(() => toast.remove(), 300);
+    }, 4000);
+  };
+
+  console.log('✅ Novo fluxo carregado: SALVAR LISTA → MODAL → OPÇÕES');
 }, 1000);
 </script>
