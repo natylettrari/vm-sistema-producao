@@ -3164,3 +3164,92 @@ function mostrarResultadoNaTela(lista, marcados) {
 // Trocar qualquer onclick="criarListaDefinitiva()" por onclick="criarListaNova()"
 console.log('✅ Solução nova carregada - use criarListaNova()');
 </script>
+
+<script>
+// CORREÇÃO: SUBSTITUIR FUNÇÃO AUTOMATICAMENTE
+console.log('🔄 Carregando substituição da função...');
+
+// Aguarda a página carregar completamente
+setTimeout(function() {
+  // SUBSTITUI a função quebrada automaticamente
+  window.criarListaDefinitiva = function() {
+    console.log('🎯 NOVA FUNÇÃO EXECUTANDO (substituiu a antiga)');
+    
+    const marcados = document.querySelectorAll('.lrcb:checked');
+    console.log('Checkboxes marcados:', marcados.length);
+    
+    if (marcados.length === 0) {
+      alert('❌ Marque pelo menos um pedido');
+      return;
+    }
+    
+    const produtos = [];
+    marcados.forEach((checkbox, index) => {
+      const linha = checkbox.closest('tr');
+      const tds = linha.querySelectorAll('td');
+      
+      if (tds.length >= 6) {
+        produtos.push({
+          pedido: tds[1].textContent.trim(),
+          modelo: tds[2].textContent.trim(),
+          cor: tds[3].textContent.trim(),
+          bordado: tds[4].textContent.trim() || 'Sem bordado',
+          vendedora: tds[5].textContent.trim()
+        });
+        console.log(`✓ ${index + 1}. ${tds[1].textContent.trim()} - ${tds[2].textContent.trim()}`);
+      }
+    });
+    
+    console.log('✅ Total produtos extraídos:', produtos.length);
+    
+    // Criar lista
+    const numeroLista = (window.LISTAS ? window.LISTAS.length : 0) + 1;
+    const lista = {
+      id: numeroLista,
+      numero: numeroLista,
+      nome: `Lista #${numeroLista}`,
+      produtos: produtos,
+      totalPecas: produtos.length,
+      dataCriacao: new Date().toLocaleDateString('pt-BR')
+    };
+    
+    // Salvar
+    if (!window.LISTAS) window.LISTAS = [];
+    window.LISTAS.push(lista);
+    console.log('✅ Lista salva:', lista.nome, '- Total listas:', window.LISTAS.length);
+    
+    // Marcar produção
+    let marcadosProducao = 0;
+    marcados.forEach(checkbox => {
+      const linha = checkbox.closest('tr');
+      const statusTd = linha.querySelector('td:last-child');
+      if (statusTd) {
+        statusTd.innerHTML = '<span class="status em_producao">Em produção</span>';
+        marcadosProducao++;
+      }
+    });
+    console.log('✅ Produtos marcados em produção:', marcadosProducao);
+    
+    // Resultado
+    alert(`✅ SUCESSO!\n\n${lista.nome}\n${lista.totalPecas} produtos\n\n✓ Lista salva em LISTAS\n✓ ${marcadosProducao} marcados como EM PRODUÇÃO`);
+    
+    // Atualizar interface
+    try {
+      if (typeof renderMinhasListas === 'function') {
+        renderMinhasListas();
+        console.log('✅ Interface Minhas Listas atualizada');
+      }
+      if (typeof atualizarStats === 'function') {
+        atualizarStats();
+        console.log('✅ Estatísticas atualizadas');
+      }
+    } catch(e) {
+      console.log('⚠️ Aviso:', e.message);
+    }
+    
+    console.log('🎯 PROCESSO CONCLUÍDO COM SUCESSO');
+  };
+  
+  console.log('✅ Função criarListaDefinitiva SUBSTITUÍDA com sucesso');
+}, 1000);
+</script>
