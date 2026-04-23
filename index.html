@@ -1088,17 +1088,20 @@ function renderMinhasListas() {
   const el = document.getElementById('minhas-listas-cont');
   if (!el) return;
 
-  // CARREGA LISTAS DO LOCALSTORAGE PRIMEIRO
+  // CARREGAR LISTAS SALVAS DO LOCALSTORAGE
   try {
-    const listasSalvas = localStorage.getItem('VILMA_LISTAS');
+    const listasSalvas = localStorage.getItem('VILMA_LISTAS_PRODUCAO');
     if (listasSalvas) {
-      window.LISTAS = JSON.parse(listasSalvas);
+      window.LISTAS_SALVAS = JSON.parse(listasSalvas);
+      // Usar as listas salvas como LISTAS principal para compatibilidade
+      window.LISTAS = window.LISTAS_SALVAS;
       console.log(`📋 ${window.LISTAS.length} listas carregadas do localStorage`);
-    } else if (!window.LISTAS) {
-      window.LISTAS = [];
+    } else {
+      // Se não há listas salvas, usar array vazio
+      if (!window.LISTAS) window.LISTAS = [];
     }
-  } catch(e) {
-    console.warn('Erro ao carregar localStorage:', e);
+  } catch(error) {
+    console.error('❌ Erro ao carregar listas do localStorage:', error);
     if (!window.LISTAS) window.LISTAS = [];
   }
 
@@ -1896,17 +1899,6 @@ function renderCal() {
     </div>`;
   }
   grid.innerHTML=html;
-  
-  // CARREGA LISTAS DO LOCALSTORAGE PARA O CALENDÁRIO
-  try {
-    const listasSalvas = localStorage.getItem('VILMA_LISTAS');
-    if (listasSalvas) {
-      window.LISTAS = JSON.parse(listasSalvas);
-    }
-  } catch(e) {
-    console.warn('Erro ao carregar listas para calendário:', e);
-  }
-  
   renderListaSemData();
 }
 
@@ -2908,59 +2900,65 @@ function criarListaDefinitiva() {
   
   console.log('✅ Confirmado pelo usuário. Processando...');
   
-  // SALVAMENTO SIMPLES DAS LISTAS
-  const numeroLista = String((window.LISTAS ? window.LISTAS.length : 0) + 1).padStart(3, '0');
+  // ========== SALVAMENTO DAS LISTAS ==========
+  console.log('💾 Iniciando salvamento da lista...');
+  
+  // Criar objeto da lista
+  const numeroLista = String((window.LISTAS_SALVAS ? window.LISTAS_SALVAS.length : 0) + 1).padStart(3, '0');
   const modelos = [...new Set(pedidosEncontrados.map(p => p.modeloBase))];
-  const resumoModelos = modelos.slice(0, 2).join(', ') + (modelos.length > 2 ? ` +${modelos.length - 2}` : '');
+  const resumo = modelos.slice(0, 2).join(', ') + (modelos.length > 2 ? ` +${modelos.length - 2}` : '');
   
   const novaLista = {
-    id: numeroLista,
+    id: `lista_${Date.now()}`,
     numero: numeroLista,
     nome: `Lista #${numeroLista}`,
-    resumo: resumoModelos,
-    produtos: pedidosEncontrados,
+    resumo: resumo,
+    produtos: pedidosEncontrados.map(p => ({
+      numero: p.numero,
+      id: p.id,
+      orderId: p.orderId,
+      modeloBase: p.modeloBase,
+      colecaoCor: p.colecaoCor,
+      bordado: p.bordado,
+      vendedora: p.vendedora,
+      status: p.status,
+      dataEnvio: p.dataEnvio
+    })),
     totalPecas: pedidosEncontrados.length,
-    criadaEm: new Date().toLocaleString('pt-BR'),
+    criadaEm: new Date().toISOString(),
+    criadaEmFormatada: new Date().toLocaleString('pt-BR'),
     dataProducao: null,
     status: 'em_producao'
   };
   
-  // Inicializa LISTAS se não existir
-  if (!window.LISTAS) window.LISTAS = [];
-  window.LISTAS.push(novaLista);
+  // Inicializar array se necessário
+  if (!window.LISTAS_SALVAS) window.LISTAS_SALVAS = [];
   
-  // Salva no localStorage
+  // Adicionar nova lista
+  window.LISTAS_SALVAS.push(novaLista);
+  
+  // Salvar no localStorage
   try {
-    localStorage.setItem('VILMA_LISTAS', JSON.stringify(window.LISTAS));
-  } catch(e) {
-    console.warn('Erro ao salvar localStorage:', e);
+    localStorage.setItem('VILMA_LISTAS_PRODUCAO', JSON.stringify(window.LISTAS_SALVAS));
+    console.log(`✅ Lista ${novaLista.nome} salva com sucesso! Total de listas: ${window.LISTAS_SALVAS.length}`);
+  } catch(error) {
+    console.error('❌ Erro ao salvar no localStorage:', error);
+    toast('⚠️ Erro ao salvar lista: ' + error.message);
   }
   
-  // Marca como produção
-  let marcadosProducao = 0;
-  pedidosEncontrados.forEach(p => {
-    if (p.status !== 'em_producao') {
-      p.status = 'em_producao';
-      marcadosProducao++;
+  // Marcar pedidos como "em produção"
+  let pedidosMarcados = 0;
+  pedidosEncontrados.forEach(pedido => {
+    if (pedido.status !== 'em_producao') {
+      pedido.status = 'em_producao';
+      pedidosMarcados++;
     }
   });
   
-  console.log('✅ SALVAMENTO CONCLUÍDO:', novaLista.nome);
-  console.log('💾 Salvo no localStorage com', window.LISTAS.length, 'listas total');
-  console.log('🏭 Marcados como produção:', marcadosProducao, 'pedidos');
+  console.log(`🏭 ${pedidosMarcados} pedidos marcados como "em produção"`);
+  // ========== FIM DO SALVAMENTO ==========
   
-  // Atualiza interface
-  try {
-    if (typeof atualizarStats === 'function') atualizarStats();
-    if (typeof renderTabela === 'function') renderTabela(FILTRADOS);
-  } catch(e) {
-    console.log('⚠️ Aviso ao atualizar interface:', e.message);
-  }
-  
-  // MOSTRA MODAL DE SUCESSO
-  mostrarModalSucessoLista(novaLista, marcadosProducao);
-  
-  toast(`✅ ${novaLista.nome} criada e salva com ${novaLista.totalPecas} produtos!`);
+  toast(`✅ ${novaLista.nome} criada! ${pedidosMarcados} pedidos → produção. Total: ${window.LISTAS_SALVAS.length} listas salvas.`);
 }
 
 function abrirImpressaoLimpa(pedidos) {
@@ -4555,132 +4553,4 @@ function formatarData(data) {
 }
 
 console.log('🎯 Sistema completo de calendário carregado!');
-
-// ===== MODAL DE SUCESSO BONITO =====
-function mostrarModalSucessoLista(lista, marcadosProducao) {
-  console.log('🎉 Exibindo modal de sucesso para:', lista.nome);
-  
-  // Remove modal anterior se existir
-  const anterior = document.getElementById('modal-lista-sucesso');
-  if (anterior) anterior.remove();
-  
-  const modal = document.createElement('div');
-  modal.className = 'cal-modal';
-  modal.id = 'modal-lista-sucesso';
-  
-  modal.innerHTML = `
-    <div class="cal-modal-box" style="max-width: 500px; text-align: center; padding: 32px">
-      
-      <div style="width: 80px; height: 80px; background: var(--rose); border-radius: 50%; 
-                  margin: 0 auto 24px; display: flex; align-items: center; justify-content: center;
-                  box-shadow: 0 8px 24px rgba(138, 76, 82, 0.3)">
-        <span style="font-size: 36px; color: white;">✓</span>
-      </div>
-      
-      <h2 style="font-family: var(--serif); font-style: italic; font-size: 28px; 
-                 color: var(--rose); margin: 0 0 12px 0">
-        ${lista.nome} criada com sucesso!
-      </h2>
-      
-      <div style="background: var(--rose-ll); border-radius: 12px; padding: 20px; margin: 24px 0">
-        <div style="font-size: 16px; color: var(--text2); margin-bottom: 8px">
-          <strong>${lista.resumo}</strong>
-        </div>
-        <div style="font-size: 14px; color: var(--text3)">
-          <strong style="color: var(--rose)">${lista.totalPecas} produtos</strong> • 
-          <strong style="color: #2e9e5a">${marcadosProducao} em produção</strong>
-        </div>
-        <div style="font-size: 12px; color: var(--text3); margin-top: 6px">
-          Criada em ${lista.criadaEm}
-        </div>
-      </div>
-      
-      <div style="background: #e8f5e8; border: 1px solid #2e9e5a; border-radius: 8px; 
-                  padding: 15px; margin: 20px 0; color: #1e5f1e; font-size: 13px">
-        <strong>✅ Lista salva com sucesso!</strong><br>
-        • Disponível na aba "Minhas Listas"<br>
-        • ${marcadosProducao} produtos marcados como "Em Produção"<br>
-        • Pode ser agendada no calendário
-      </div>
-      
-      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 28px 0">
-        <button onclick="imprimirUltimaListaModal()" 
-                style="background: var(--gold); color: white; border: none; border-radius: 8px; 
-                       padding: 14px 18px; font-size: 14px; font-weight: 500; cursor: pointer;
-                       transition: all 0.2s; display: flex; align-items: center; justify-content: center; gap: 8px"
-                onmouseover="this.style.background='#a8834a'" 
-                onmouseout="this.style.background='var(--gold)'">
-          🖨️ Imprimir Lista
-        </button>
-        <button onclick="verMinhasListasModal()" 
-                style="background: var(--rose); color: white; border: none; border-radius: 8px; 
-                       padding: 14px 18px; font-size: 14px; font-weight: 500; cursor: pointer;
-                       transition: all 0.2s; display: flex; align-items: center; justify-content: center; gap: 8px"
-                onmouseover="this.style.background='#7a3d44'" 
-                onmouseout="this.style.background='var(--rose)'">
-          📋 Ver Minhas Listas
-        </button>
-      </div>
-      
-      <button onclick="irParaCalendarioModal()" 
-              style="background: var(--lilac); color: white; border: none; border-radius: 8px; 
-                     padding: 12px 20px; font-size: 13px; cursor: pointer; margin-bottom: 15px;
-                     transition: all 0.2s; display: flex; align-items: center; justify-content: center; gap: 6px; margin: 0 auto 15px"
-              onmouseover="this.style.background='#8a6a7c'" 
-              onmouseout="this.style.background='var(--lilac)'">
-        📅 Agendar no Calendário
-      </button>
-      
-      <button onclick="fecharModalSucessoLista()" 
-              style="background: transparent; color: var(--text3); border: 1px solid var(--border2); 
-                     border-radius: 6px; padding: 8px 16px; font-size: 12px; cursor: pointer;
-                     transition: all 0.2s; display: block; margin: 0 auto"
-              onmouseover="this.style.borderColor='var(--rose)'; this.style.color='var(--rose)'" 
-              onmouseout="this.style.borderColor='var(--border2)'; this.style.color='var(--text3)'">
-        Fechar
-      </button>
-    </div>
-  `;
-  
-  document.body.appendChild(modal);
-  
-  // Guarda a última lista para impressão
-  window._ULTIMA_LISTA_CRIADA = lista;
-}
-
-// Funções dos botões do modal
-window.imprimirUltimaListaModal = function() {
-  console.log('🖨️ Tentando imprimir última lista...');
-  if (window._ULTIMA_LISTA_CRIADA && window._ULTIMA_LISTA_CRIADA.produtos) {
-    console.log('📄 Imprimindo:', window._ULTIMA_LISTA_CRIADA.produtos.length, 'produtos');
-    abrirImpressaoLimpa(window._ULTIMA_LISTA_CRIADA.produtos);
-    fecharModalSucessoLista();
-  } else {
-    alert('❌ Lista não encontrada para impressão');
-    console.error('❌ window._ULTIMA_LISTA_CRIADA não encontrada');
-  }
-};
-
-window.verMinhasListasModal = function() {
-  console.log('📋 Navegando para Minhas Listas...');
-  fecharModalSucessoLista();
-  if (typeof showSec === 'function') {
-    showSec('minhas-listas', document.querySelectorAll('.nav-btn')[6]);
-  }
-};
-
-window.irParaCalendarioModal = function() {
-  console.log('📅 Navegando para Calendário...');
-  fecharModalSucessoLista();
-  if (typeof showSec === 'function') {
-    showSec('calendario', document.querySelectorAll('.nav-btn')[2]);
-  }
-};
-
-window.fecharModalSucessoLista = function() {
-  const modal = document.getElementById('modal-lista-sucesso');
-  if (modal) modal.remove();
-};
-
-console.log('🎯 Sistema com modal de sucesso carregado!');
 </script>
