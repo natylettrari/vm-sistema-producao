@@ -682,9 +682,33 @@ async function carregarVendedoras() {
 
 async function carregarListas() {
   try {
+    // PRIMEIRO: Tenta carregar do localStorage (listas salvas localmente)
+    const listasSalvas = localStorage.getItem('VILMA_LISTAS');
+    if (listasSalvas) {
+      LISTAS = JSON.parse(listasSalvas);
+      console.log('📋 Listas carregadas do localStorage:', LISTAS.length);
+    } else {
+      LISTAS = [];
+    }
+  } catch(e) { 
+    console.log('⚠️ Erro localStorage:', e.message);
+    LISTAS = [];
+  }
+  
+  // SEGUNDO: Tenta sincronizar com API (se existir)
+  try {
     const r = await fetch('/api/listas');
-    if (r.ok) { const d = await r.json(); LISTAS = d.listas||[]; }
-  } catch(e) { console.log('listas:', e.message); }
+    if (r.ok) { 
+      const d = await r.json(); 
+      if (d.listas && d.listas.length > 0) {
+        console.log('🔄 Sincronizando com API:', d.listas.length);
+        // Mescla listas da API com as locais (evita duplicação)
+        LISTAS = d.listas || LISTAS;
+      }
+    }
+  } catch(e) { 
+    console.log('⚠️ API indisponível:', e.message); 
+  }
 }
 
 function atualizarStats() {
@@ -1087,23 +1111,6 @@ function verPedidosUrgentes() {
 function renderMinhasListas() {
   const el = document.getElementById('minhas-listas-cont');
   if (!el) return;
-
-  // CARREGAR LISTAS SALVAS DO LOCALSTORAGE
-  try {
-    const listasSalvas = localStorage.getItem('VILMA_LISTAS_PRODUCAO');
-    if (listasSalvas) {
-      window.LISTAS_SALVAS = JSON.parse(listasSalvas);
-      // Usar as listas salvas como LISTAS principal para compatibilidade
-      window.LISTAS = window.LISTAS_SALVAS;
-      console.log(`📋 ${window.LISTAS.length} listas carregadas do localStorage`);
-    } else {
-      // Se não há listas salvas, usar array vazio
-      if (!window.LISTAS) window.LISTAS = [];
-    }
-  } catch(error) {
-    console.error('❌ Erro ao carregar listas do localStorage:', error);
-    if (!window.LISTAS) window.LISTAS = [];
-  }
 
   if (!LISTAS.length) {
     el.innerHTML = '<div class="loading">Nenhuma lista gerada ainda</div>';
@@ -2899,79 +2906,7 @@ function criarListaDefinitiva() {
   }
   
   console.log('✅ Confirmado pelo usuário. Processando...');
-  
-  // ========== SALVAMENTO DAS LISTAS ==========
-  console.log('💾 Iniciando salvamento da lista...');
-  
-  // Criar objeto da lista
-  const numeroLista = String((window.LISTAS_SALVAS ? window.LISTAS_SALVAS.length : 0) + 1).padStart(3, '0');
-  const modelos = [...new Set(pedidosEncontrados.map(p => p.modeloBase))];
-  const resumo = modelos.slice(0, 2).join(', ') + (modelos.length > 2 ? ` +${modelos.length - 2}` : '');
-  
-  const agora = new Date();
-  const novaLista = {
-    id: `lista_${Date.now()}`,
-    numero: numeroLista,
-    nome: `Lista #${numeroLista}`,
-    resumo: resumo,
-    produtos: pedidosEncontrados.map(p => ({
-      numero: p.numero,
-      id: p.id,
-      orderId: p.orderId,
-      modeloBase: p.modeloBase,
-      colecaoCor: p.colecaoCor,
-      bordado: p.bordado,
-      vendedora: p.vendedora,
-      status: p.status,
-      dataEnvio: p.dataEnvio
-    })),
-    totalPecas: pedidosEncontrados.length,
-    criadaEm: agora.toISOString(),
-    criadaEmFormatada: agora.toLocaleString('pt-BR'),
-    dataCriacao: agora.toLocaleDateString('pt-BR'),
-    horaCriacao: agora.toLocaleTimeString('pt-BR'),
-    dataProducao: null,
-    status: 'em_producao'
-  };
-  
-  // Inicializar array se necessário
-  if (!window.LISTAS_SALVAS) window.LISTAS_SALVAS = [];
-  
-  // Adicionar nova lista
-  window.LISTAS_SALVAS.push(novaLista);
-  
-  // Salvar no localStorage
-  try {
-    localStorage.setItem('VILMA_LISTAS_PRODUCAO', JSON.stringify(window.LISTAS_SALVAS));
-    console.log(`✅ Lista ${novaLista.nome} salva com sucesso! Total de listas: ${window.LISTAS_SALVAS.length}`);
-  } catch(error) {
-    console.error('❌ Erro ao salvar no localStorage:', error);
-    toast('⚠️ Erro ao salvar lista: ' + error.message);
-    return;
-  }
-  
-  // Marcar pedidos como "em produção"
-  let pedidosMarcados = 0;
-  pedidosEncontrados.forEach(pedido => {
-    if (pedido.status !== 'em_producao') {
-      pedido.status = 'em_producao';
-      pedidosMarcados++;
-    }
-  });
-  
-  console.log(`🏭 ${pedidosMarcados} pedidos marcados como "em produção"`);
-  
-  // ATUALIZAR INTERFACE
-  if (typeof atualizarStats === 'function') atualizarStats();
-  if (typeof renderTabela === 'function') renderTabela(FILTRADOS);
-  
-  // MOSTRAR MODAL DE SUCESSO ORIGINAL
-  if (typeof mostrarModalSucesso === 'function') {
-    mostrarModalSucesso(novaLista);
-  } else {
-    toast(`✅ ${novaLista.nome} criada! ${pedidosMarcados} pedidos → produção`);
-  }
-  // ========== FIM DO SALVAMENTO ==========
+  toast(`✅ Iniciando processamento de ${pedidosEncontrados.length} pedidos...`);
 }
 
 function abrirImpressaoLimpa(pedidos) {
