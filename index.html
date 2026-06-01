@@ -589,6 +589,17 @@ function getTipo(modeloBase) {
   return 'bolsa'; // default
 }
 
+// Compara coleção/cor de forma flexível: ignora o separador "·" e exige que
+// todas as palavras do filtro estejam presentes no valor do item.
+// Ex: filtro "Le Petit · Bege" casa com "Le Petit Bege", "Bege - Le Petit", etc.
+function colecaoCombina(valorItem, filtro) {
+  if (!filtro) return true;
+  const norm = s => (s||'').toLowerCase().replace(/·/g,' ').replace(/\s+/g,' ').trim();
+  const item = norm(valorItem);
+  const palavras = norm(filtro).split(' ').filter(Boolean);
+  return palavras.every(palavra => item.includes(palavra));
+}
+
 // ── Estado ────────────────────────────────────────────────────────────────────
 let PEDIDOS = [], FILTRADOS = [], LISTAS = [];
 let CAL_MES = new Date().getMonth(), CAL_ANO = new Date().getFullYear();
@@ -817,7 +828,7 @@ function filtrar() {
       if(!campos.some(c=>c.includes(busca))) return false;
     }
     if(mod&&!(p.modeloBase||'').toLowerCase().includes(mod)&&!(p.modelo||'').toLowerCase().includes(mod)) return false;
-    if(col&&!(p.colecaoCor||'').toLowerCase().includes(col)) return false;
+    if(col&&!colecaoCombina(p.colecaoCor, col)) return false;
     if(vend&&!(p.vendedora||'').toLowerCase().includes(vend)) return false;
     if(st&&p.status!==st) return false;
     if(de||ate){const pts=(p.dataEnvio||'').split('/');if(pts.length>=2){const yr=pts[2]||new Date().getFullYear();const d=new Date(`${yr}-${pts[1]}-${pts[0]}`);if(de&&d<new Date(de))return false;if(ate&&d>new Date(ate+'T23:59:59'))return false;}}
@@ -1350,7 +1361,7 @@ function gerarListaFiltros() {
   }
   if(mTags.length) peds=peds.filter(p=>mTags.some(m=>(p.modeloBase||'').toLowerCase().includes(m)||(p.modelo||'').toLowerCase().includes(m)));
   if(vend) peds=peds.filter(p=>(p.vendedora||'').toLowerCase().includes(vend));
-  if(col) peds=peds.filter(p=>(p.colecaoCor||'').toLowerCase().includes(col));
+  if(col) peds=peds.filter(p=>colecaoCombina(p.colecaoCor, col));
   if(stF.length) peds=peds.filter(p=>stF.includes(p.status));
 
   // Filtro por tipo (bolsa / acessório)
@@ -1529,7 +1540,7 @@ function abrirPopupGerarLista() {
       </div>
       <div style="display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap">
         <button class="btn btn-outline" onclick="fecharModalGerar()">Cancelar</button>
-        <button class="btn btn-rose" onclick="confirmarGerarLista()">✅ Salvar e gerar lista</button>
+        <button class="btn btn-rose" id="btn-confirmar-gerar" onclick="confirmarGerarLista()">✅ Salvar e gerar lista</button>
       </div>
     </div>`;
   document.body.appendChild(modal);
@@ -1558,8 +1569,13 @@ async function confirmarGerarLista() {
   const dataEnvio = lotes.length === 1 ? lotes[0] : '';
 
   try {
-    fecharModalGerar();
-    toast('Gerando lista...');
+    // Feedback imediato no próprio botão do pop-up
+    const btnConfirmar = document.getElementById('btn-confirmar-gerar');
+    if (btnConfirmar) {
+      btnConfirmar.disabled = true;
+      btnConfirmar.textContent = 'Gerando...';
+      btnConfirmar.style.opacity = '0.7';
+    }
 
     // Numeração automática + persistência no banco
     const r = await fetch('/api/listas', {
@@ -1591,16 +1607,57 @@ async function confirmarGerarLista() {
     renderMinhasListas();
     if (typeof renderCal === 'function') renderCal();
 
-    // Guarda referência para impressão e mostra o botão imprimir
+    // Guarda referência para impressão e mostra o botão imprimir no cabeçalho
     window._LISTA_GERADA = lista;
     const btn = document.getElementById('btn-imprimir-gerada');
     if (btn) btn.style.display = 'inline-block';
 
-    toast(`✅ Lista #${lista.numero} gerada com ${itens.length} ${itens.length>1?'itens':'item'}!`);
+    // Fecha o pop-up de confirmação e abre o de "Lista pronta"
+    fecharModalGerar();
+    mostrarListaPronta(lista, itens.length);
   } catch(e) {
     console.error(e);
+    // Reativa o botão para nova tentativa
+    const btnConfirmar = document.getElementById('btn-confirmar-gerar');
+    if (btnConfirmar) {
+      btnConfirmar.disabled = false;
+      btnConfirmar.textContent = '✅ Salvar e gerar lista';
+      btnConfirmar.style.opacity = '1';
+    }
     toast('Erro ao gerar lista: ' + e.message);
   }
+}
+
+// Pop-up exibido após a lista ser gerada com sucesso
+function mostrarListaPronta(lista, totalItens) {
+  const anterior = document.getElementById('modal-lista-pronta');
+  if (anterior) anterior.remove();
+
+  const modelosStr = (lista.modelos && lista.modelos.length)
+    ? lista.modelos.slice(0,3).join(', ') + (lista.modelos.length>3 ? ` +${lista.modelos.length-3}` : '')
+    : lista.nome.replace(/Lista #\d+ — /,'');
+
+  const modal = document.createElement('div');
+  modal.className = 'cal-modal';
+  modal.id = 'modal-lista-pronta';
+  modal.innerHTML = `
+    <div class="cal-modal-box" style="max-width:420px;text-align:center">
+      <div style="width:60px;height:60px;background:#2e9e5a;border-radius:50%;margin:0 auto 16px;display:flex;align-items:center;justify-content:center;font-size:30px;color:#fff">✓</div>
+      <div style="font-family:var(--serif);font-style:italic;font-size:22px;color:var(--rose);margin-bottom:6px">Lista #${lista.numero} pronta!</div>
+      <div style="font-size:13px;color:var(--text2);margin-bottom:4px">${modelosStr}</div>
+      <div style="font-size:12px;color:var(--text3);margin-bottom:20px">${totalItens} ${totalItens>1?'itens':'item'}${lista.dataEnvio?' · Lote '+lista.dataEnvio:''}</div>
+      <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
+        <button class="btn btn-outline" onclick="fecharListaPronta()">Fechar</button>
+        <button class="btn btn-gold" onclick="fecharListaPronta();imprimirLista('${lista.id}')">🖨️ Imprimir lista</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  modal.addEventListener('click', e => { if(e.target===modal) fecharListaPronta(); });
+}
+
+function fecharListaPronta() {
+  const m = document.getElementById('modal-lista-pronta');
+  if (m) m.remove();
 }
 
 // Imprime a lista que acabou de ser gerada
@@ -1995,7 +2052,7 @@ async function carregarFicha() {
   if (FICHA_TIPO !== 'todos') peds = peds.filter(p => getTipo(p.modeloBase) === FICHA_TIPO);
 
   // Filtro por coleção
-  if (colecao) peds = peds.filter(p => (p.colecaoCor||'').toLowerCase().includes(colecao));
+  if (colecao) peds = peds.filter(p => colecaoCombina(p.colecaoCor, colecao));
 
   // Excluir acessórios da ficha de corte se tipo = todos (ficha é para tecido)
   const excluir = ['trocador','necessaire','pingente','organizador','saquinho','porta look','porta documento','porta chupetas','kit cristal','alça','alca'];
