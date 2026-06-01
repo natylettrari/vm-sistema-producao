@@ -195,13 +195,15 @@ input[type=checkbox]{accent-color:var(--rose);cursor:pointer}
 .toast{position:fixed;bottom:24px;right:24px;background:var(--rose);color:#fff;padding:12px 20px;border-radius:8px;font-size:13px;z-index:9999;transform:translateY(80px);opacity:0;transition:all .3s;pointer-events:none}
 .toast.show{transform:translateY(0);opacity:1}
 @media print{
+  @page{size:A4 portrait;margin:10mm}
   .header,.nav,.filters,.bar,.sidebar,.stats,#alerta-10dias,.prog-box,.prev-top .btn,.prev-top button,
   .prev-top,.resumo,#listas-sem-data,.cal-wrap > div:last-child{display:none!important}
-  .lista-layout{grid-template-columns:1fr!important;min-height:auto!important}
-  .main-c{max-height:none!important;overflow:visible!important;padding:8px 16px!important}
-  .grp-card{break-inside:avoid;margin-bottom:8px!important}
+  .lista-layout{display:block!important;grid-template-columns:1fr!important;min-height:auto!important}
+  .main-c{max-height:none!important;overflow:visible!important;padding:0!important;width:100%!important}
+  #lista-cont{padding:0!important}
+  .grp-card{break-inside:avoid;page-break-inside:avoid;margin-bottom:8px!important}
   body{background:#fff!important;margin:0!important;padding:0!important}
-  .print-header{display:block!important;padding-bottom:8px!important;margin-bottom:10px!important}
+  .print-header{display:block!important;padding-bottom:8px!important;margin-bottom:10px!important;page-break-before:avoid!important;page-break-after:avoid!important}
   .section{display:block!important}
   #sec-pedidos,#sec-calendario,#sec-ficha,#sec-bordado,#sec-relatorios,#sec-minhas-listas{display:none!important}
   #sec-lista{display:block!important}
@@ -1601,8 +1603,19 @@ async function confirmarGerarLista() {
       body: JSON.stringify({ nome: lista.nome })
     });
 
-    // Recarrega listas do banco (fonte única) e atualiza telas
+    // Recarrega listas e pedidos do banco (status de produção já aplicado no servidor)
     await carregarListas();
+    try {
+      const rp = await fetch('/api/pedidos?force=true');
+      if (rp.ok) {
+        const dp = await rp.json();
+        PEDIDOS = dp.pedidos || PEDIDOS;
+        FILTRADOS = [...PEDIDOS];
+      }
+    } catch(e) { console.log('recarga de pedidos falhou:', e.message); }
+    atualizarStats();
+    // Re-renderiza a lista atual já com os status atualizados
+    if (typeof gerarListaFiltros === 'function') gerarListaFiltros();
     renderTabela(FILTRADOS);
     renderMinhasListas();
     if (typeof renderCal === 'function') renderCal();
