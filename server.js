@@ -62,6 +62,12 @@ async function initDB() {
       status TEXT DEFAULT 'em_producao',
       criada_em TIMESTAMP DEFAULT NOW()
     );
+  CREATE TABLE IF NOT EXISTS itens_producao (
+      item_id TEXT PRIMARY KEY,
+      status TEXT NOT NULL DEFAULT 'em_producao',
+      lista_numero TEXT,
+      atualizado_em TIMESTAMP DEFAULT NOW()
+    );
   `);
   console.log('DB inicializado');
 }
@@ -128,6 +134,29 @@ async function proximoNumeroLista() {
   const r = await pool.query(`SELECT numero FROM listas_producao ORDER BY criada_em DESC LIMIT 1`);
   if (!r.rows.length) return '0001';
   return String(parseInt(r.rows[0].numero||'0') + 1).padStart(4, '0');
+}
+
+// ── Status de produção por item (não se perde ao sincronizar) ─────────────────
+// Carrega um mapa { itemId: status } de todos os itens marcados em produção
+async function loadStatusItens() {
+  try {
+    const r = await pool.query(`SELECT item_id, status FROM itens_producao`);
+    const mapa = {};
+    for (const row of r.rows) mapa[row.item_id] = row.status;
+    return mapa;
+  } catch(e) { console.error('loadStatusItens:', e.message); return {}; }
+}
+
+// Marca uma lista de itemIds com um status (default em_producao)
+async function marcarItensProducao(itemIds, listaNumero, status='em_producao') {
+  if (!Array.isArray(itemIds) || !itemIds.length) return;
+  for (const itemId of itemIds) {
+    await pool.query(`
+      INSERT INTO itens_producao(item_id, status, lista_numero, atualizado_em)
+      VALUES($1, $2, $3, NOW())
+      ON CONFLICT(item_id) DO UPDATE SET status=$2, lista_numero=$3, atualizado_em=NOW()
+    `, [String(itemId), status, listaNumero || null]);
+  }
 }
 
 // ── Sessões ───────────────────────────────────────────────────────────────────
@@ -470,10 +499,21 @@ function mapItem(order, item, isDraft, listasCache, idx) {
   const dataEnvioFinal = ov?.data_envio_override || dataEnvio;
   const vendedoraFinal = ov?.vendedora_override || obs.vendedora || '—';
 
+  // ID único do item
+  const itemId = (isDraft ? 'D-' : '') + String(order.id) + '__' + String(item.id || 'li') + '__' + String(idx == null ? 0 : idx);
+
+  // Status base (calculado das tags da Shopify)
+  let statusFinal = calcStatus(order.tags, dataEnvio, obs.isProntaEntrega, order.fulfillment_status);
+  // Status de produção por item (banco) sobrepõe — mas nunca rebaixa quem já saiu/pronto
+  const statusItem = (listasCache||[])._statusItens?.[itemId];
+  if (statusItem && !['enviado','pronto','pronta_entrega'].includes(statusFinal)) {
+    statusFinal = statusItem;
+  }
+
   return {
     id: isDraft ? 'D-'+order.id : order.id,
     orderId: String(order.id),
-    itemId: (isDraft ? 'D-' : '') + String(order.id) + '__' + String(item.id || 'li') + '__' + String(idx == null ? 0 : idx),
+    itemId: itemId,
     numero: isDraft ? '#D-'+String(order.id).slice(-4) : '#'+order.order_number,
     cliente: order.customer ? `${order.customer.first_name||''} ${order.customer.last_name||''}`.trim() : '—',
     email: order.customer?.email || '—',
@@ -486,7 +526,7 @@ function mapItem(order, item, isDraft, listasCache, idx) {
     foiEditado: !!ov,
     obsCliente: obs.obsCliente || '—',
     noteRaw: order.note || '',
-    status: calcStatus(order.tags, dataEnvio, obs.isProntaEntrega, order.fulfillment_status),
+    status: statusFinal,
     isUrgente: obs.isUrgente || (order.tags||'').toLowerCase().includes('urgente'),
     isDraft, isKitItem: item.isKitItem||false, kitOriginal: item.kitOriginal||null,
     tags: order.tags||'', quantidade: item.quantity||1,
@@ -524,6 +564,8 @@ async function buscarTodosPedidos(token, params={}) {
     listasCache._overrides = {};
     for (const ov of ovR.rows) listasCache._overrides[ov.order_id] = ov;
   } catch(e) { listasCache._overrides = {}; }
+  // Status de produção por item (banco) — sobrevive às sincronizações
+  listasCache._statusItens = await loadStatusItens();
 
   let lista = [];
   for (const o of allOrders) {
@@ -690,7 +732,9 @@ app.post('/api/listas', async (req,res) => {
     pedidoIds:pedidoIds||[], dataEnvio:dataEnvio||null, dataProducao:null,
     totalPecas:totalPecas||0, modelos:modelos||[], status:'em_producao', criadaEm:new Date().toISOString() };
   await salvarLista(lista);
-  CACHE_TS = 0; // invalida cache para atualizar listaNumero
+  // Marca cada item da lista como "em produção" no banco (por item, não por pedido)
+  await marcarItensProducao(pedidoIds||[], numero, 'em_producao');
+  CACHE_TS = 0; // invalida cache para atualizar status e listaNumero
   res.json({lista});
 });
 
@@ -701,7 +745,18 @@ app.put('/api/listas/:id', async (req,res) => {
 });
 
 app.delete('/api/listas/:id', async (req,res) => {
+  // Antes de excluir, libera os itens dessa lista (remove status de produção)
+  try {
+    const listas = await loadListas();
+    const lista = listas.find(l => l.id === req.params.id);
+    if (lista && Array.isArray(lista.pedidoIds) && lista.pedidoIds.length) {
+      for (const itemId of lista.pedidoIds) {
+        await pool.query(`DELETE FROM itens_producao WHERE item_id=$1`, [String(itemId)]);
+      }
+    }
+  } catch(e) { console.error('liberar itens:', e.message); }
   await deletarLista(req.params.id);
+  CACHE_TS = 0;
   res.json({ok:true});
 });
 
