@@ -457,7 +457,7 @@ function diasUteisAte(dataStr) {
   return uteis;
 }
 
-function mapItem(order, item, isDraft, listasCache) {
+function mapItem(order, item, isDraft, listasCache, idx) {
   const obs = parseObs(order.note);
   const modeloBase = extrairModeloBase(item.title);
   const dataEnvio = obs.dataEnvio || '—';
@@ -473,6 +473,7 @@ function mapItem(order, item, isDraft, listasCache) {
   return {
     id: isDraft ? 'D-'+order.id : order.id,
     orderId: String(order.id),
+    itemId: (isDraft ? 'D-' : '') + String(order.id) + '__' + String(item.id || 'li') + '__' + String(idx == null ? 0 : idx),
     numero: isDraft ? '#D-'+String(order.id).slice(-4) : '#'+order.order_number,
     cliente: order.customer ? `${order.customer.first_name||''} ${order.customer.last_name||''}`.trim() : '—',
     email: order.customer?.email || '—',
@@ -526,9 +527,10 @@ async function buscarTodosPedidos(token, params={}) {
 
   let lista = [];
   for (const o of allOrders) {
+    let __idx = 0;
     for (const i of o.line_items) {
       for (const ei of expandirKit(i)) {
-        lista.push(mapItem(o, ei, false, listasCache));
+        lista.push(mapItem(o, ei, false, listasCache, __idx++));
       }
     }
   }
@@ -538,9 +540,10 @@ async function buscarTodosPedidos(token, params={}) {
     if (dr.ok) {
       const dd = await dr.json();
       for (const o of dd.draft_orders||[]) {
+        let __idx = 0;
         for (const i of o.line_items) {
           for (const ei of expandirKit(i)) {
-            lista.push(mapItem(o, ei, true, listasCache));
+            lista.push(mapItem(o, ei, true, listasCache, __idx++));
           }
         }
       }
