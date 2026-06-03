@@ -402,6 +402,7 @@ input[type=checkbox]{accent-color:var(--rose);cursor:pointer}
         <div class="sb-ck"><input type="checkbox" id="ls-ok"><label for="ls-ok">Pronto</label></div>
         <div class="sb-ck"><input type="checkbox" id="ls-at" checked><label for="ls-at">Atrasado</label></div>
         <div class="sb-ck"><input type="checkbox" id="ls-pe"><label for="ls-pe">Pronta entrega</label></div>
+        <div class="sb-ck"><input type="checkbox" id="ls-en"><label for="ls-en">Enviado</label></div>
       </div>
 
       <div class="sb-div"></div>
@@ -1397,6 +1398,7 @@ function gerarListaFiltros() {
   if(document.getElementById('ls-ok').checked) stF.push('pronto');
   if(document.getElementById('ls-at').checked) stF.push('atrasado');
   if(document.getElementById('ls-pe').checked) stF.push('pronta_entrega');
+  if(document.getElementById('ls-en') && document.getElementById('ls-en').checked) stF.push('enviado');
 
   // Respeita busca ativa
   const buscaAtiva=(document.getElementById('l-busca')||{value:''}).value.toLowerCase().trim();
