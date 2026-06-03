@@ -1309,13 +1309,16 @@ async function imprimirLista(id) {
     <style>
       @page{size:A4 portrait;margin:12mm}
       *{box-sizing:border-box;margin:0;padding:0}
-      body{font-family:-apple-system,Helvetica,Arial,sans-serif;color:#2a2526;font-size:12px;padding:0}
+      html,body{margin:0!important;padding:0!important}
+      body{font-family:-apple-system,Helvetica,Arial,sans-serif;color:#2a2526;font-size:12px}
       .cab{border-bottom:2px solid #8A4C52;padding-bottom:8px;margin-bottom:14px}
       .cab-tit{font-family:Georgia,"Times New Roman",serif;font-style:italic;font-size:22px;color:#8A4C52}
       .cab-sub{font-size:12px;color:#5a5052;margin-top:3px}
-      .grupo{margin-bottom:14px;page-break-inside:avoid}
+      .grupo{margin-bottom:14px;page-break-inside:auto}
       .grupo-hd{font-weight:600;font-size:13px;color:#8A4C52;margin-bottom:5px}
       table{width:100%;border-collapse:collapse}
+      thead{display:table-header-group}
+      tr{page-break-inside:avoid}
       th{text-align:left;font-size:9px;text-transform:uppercase;letter-spacing:.04em;color:#777;border-bottom:1px solid #ccc;padding:4px 6px}
       td{font-size:11px;padding:5px 6px;border-bottom:1px solid #eee}
     </style></head>
@@ -1325,10 +1328,12 @@ async function imprimirLista(id) {
         <div class="cab-sub">Lista #${l.numero} · ${nomeLimpo} · ${peds.length} peças · ${comBord} com bordado${l.dataEnvio?' · Lote '+l.dataEnvio:''}${l.dataProducao?' · Produção: '+l.dataProducao:''} · ${dataCriada}</div>
       </div>
       ${gruposHtml}
+      <script>
+        window.onload = function(){ setTimeout(function(){ window.print(); }, 200); };
+      <\/script>
     </body></html>`);
   win.document.close();
   win.focus();
-  setTimeout(() => { win.print(); }, 400);
 }
 
 async function definirDataProdDaLista(id, val) {
