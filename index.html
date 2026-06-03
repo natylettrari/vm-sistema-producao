@@ -1261,8 +1261,74 @@ function renderMinhasListas() {
 async function imprimirLista(id) {
   const l = LISTAS.find(x => x.id === id);
   if (!l) return;
-  verLista(id);
-  setTimeout(() => window.print(), 500);
+
+  // Itens da lista (por itemId)
+  const peds = PEDIDOS.filter(p =>
+    l.pedidoIds && l.pedidoIds.some(lid => String(lid) === String(p.itemId))
+  );
+  if (!peds.length) { toast('Lista sem itens para imprimir'); return; }
+
+  // Agrupa por modelo
+  const grupos = {};
+  peds.forEach(p => {
+    const m = p.modeloBase || 'Outros';
+    (grupos[m] = grupos[m] || []).push(p);
+  });
+
+  const comBord = peds.filter(p => p.bordado).length;
+  const nomeLimpo = l.nome.replace(/Lista #\d+ — /,'');
+  const dataCriada = l.criadaEm ? new Date(l.criadaEm).toLocaleDateString('pt-BR') : new Date().toLocaleDateString('pt-BR');
+
+  const gruposHtml = Object.entries(grupos).map(([nome, items]) => {
+    const linhas = items.map(p => `
+      <tr>
+        <td>${(p.numero||'').replace('#','')}</td>
+        <td>${p.modeloBase||''}</td>
+        <td>${p.colecaoCor||''}</td>
+        <td>${p.bordado||'Sem bordado'}</td>
+        <td>${p.vendedora||''}</td>
+        <td>${p.dataEnvio||''}</td>
+      </tr>`).join('');
+    return `
+      <div class="grupo">
+        <div class="grupo-hd">${nome} — ${items.length} peça${items.length>1?'s':''}</div>
+        <table>
+          <thead><tr>
+            <th>Pedido</th><th>Modelo</th><th>Cor / Coleção</th>
+            <th>Bordado</th><th>Vendedora</th><th>Envio</th>
+          </tr></thead>
+          <tbody>${linhas}</tbody>
+        </table>
+      </div>`;
+  }).join('');
+
+  const win = window.open('', '_blank');
+  if (!win) { toast('Permita pop-ups para imprimir'); return; }
+  win.document.write(`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">
+    <title>Lista #${l.numero} — Vilma Mirian</title>
+    <style>
+      @page{size:A4 portrait;margin:12mm}
+      *{box-sizing:border-box;margin:0;padding:0}
+      body{font-family:-apple-system,Helvetica,Arial,sans-serif;color:#2a2526;font-size:12px;padding:0}
+      .cab{border-bottom:2px solid #8A4C52;padding-bottom:8px;margin-bottom:14px}
+      .cab-tit{font-family:Georgia,"Times New Roman",serif;font-style:italic;font-size:22px;color:#8A4C52}
+      .cab-sub{font-size:12px;color:#5a5052;margin-top:3px}
+      .grupo{margin-bottom:14px;page-break-inside:avoid}
+      .grupo-hd{font-weight:600;font-size:13px;color:#8A4C52;margin-bottom:5px}
+      table{width:100%;border-collapse:collapse}
+      th{text-align:left;font-size:9px;text-transform:uppercase;letter-spacing:.04em;color:#777;border-bottom:1px solid #ccc;padding:4px 6px}
+      td{font-size:11px;padding:5px 6px;border-bottom:1px solid #eee}
+    </style></head>
+    <body>
+      <div class="cab">
+        <div class="cab-tit">Vilma Mirian — Produção</div>
+        <div class="cab-sub">Lista #${l.numero} · ${nomeLimpo} · ${peds.length} peças · ${comBord} com bordado${l.dataEnvio?' · Lote '+l.dataEnvio:''}${l.dataProducao?' · Produção: '+l.dataProducao:''} · ${dataCriada}</div>
+      </div>
+      ${gruposHtml}
+    </body></html>`);
+  win.document.close();
+  win.focus();
+  setTimeout(() => { win.print(); }, 400);
 }
 
 async function definirDataProdDaLista(id, val) {
@@ -1512,6 +1578,16 @@ function abrirPopupGerarLista() {
     return;
   }
 
+  // Bloqueia itens que já estão em produção (evita lista duplicada)
+  const jaEmProducao = itens.filter(p => p.status === 'em_producao');
+  if (jaEmProducao.length) {
+    const exemplos = jaEmProducao.slice(0,5)
+      .map(p => `${p.numero} ${p.modeloBase}${p.listaNumero?' (Lista #'+p.listaNumero+')':''}`)
+      .join('<br>');
+    mostrarAvisoEmProducao(jaEmProducao.length, exemplos);
+    return;
+  }
+
   // Agrupa por modelo só para exibir o resumo no pop-up
   const porModelo = {};
   itens.forEach(p => {
@@ -1555,6 +1631,39 @@ function abrirPopupGerarLista() {
 
 function fecharModalGerar() {
   const m = document.getElementById('modal-gerar-lista');
+  if (m) m.remove();
+}
+
+// Aviso quando há itens já em produção entre os marcados
+function mostrarAvisoEmProducao(qtd, exemplosHtml) {
+  const anterior = document.getElementById('modal-aviso-producao');
+  if (anterior) anterior.remove();
+  const modal = document.createElement('div');
+  modal.className = 'cal-modal';
+  modal.id = 'modal-aviso-producao';
+  modal.innerHTML = `
+    <div class="cal-modal-box" style="max-width:440px">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+        <span style="font-size:26px">⚠️</span>
+        <div style="font-family:var(--serif);font-style:italic;font-size:19px;color:var(--rose)">Itens já em produção</div>
+      </div>
+      <div style="font-size:13px;color:var(--text2);margin-bottom:12px">
+        ${qtd} ${qtd>1?'itens selecionados já estão':'item selecionado já está'} em produção em outra lista.
+        Desmarque ${qtd>1?'esses itens':'esse item'} antes de gerar uma nova lista, para não duplicar.
+      </div>
+      <div style="background:var(--bg3);border-radius:8px;padding:10px 14px;margin-bottom:16px;font-size:12px;color:var(--text2);max-height:160px;overflow-y:auto">
+        ${exemplosHtml}${qtd>5?`<br><span style="color:var(--text3)">+ mais ${qtd-5}...</span>`:''}
+      </div>
+      <div style="display:flex;justify-content:flex-end">
+        <button class="btn btn-rose" onclick="fecharAvisoProducao()">Entendi</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  modal.addEventListener('click', e => { if(e.target===modal) fecharAvisoProducao(); });
+}
+
+function fecharAvisoProducao() {
+  const m = document.getElementById('modal-aviso-producao');
   if (m) m.remove();
 }
 
@@ -1607,22 +1716,33 @@ async function confirmarGerarLista() {
       body: JSON.stringify({ nome: lista.nome })
     });
 
-    // Recarrega listas e pedidos do banco (status de produção já aplicado no servidor)
-    await carregarListas();
-    try {
-      const rp = await fetch('/api/pedidos?force=true');
-      if (rp.ok) {
-        const dp = await rp.json();
-        PEDIDOS = dp.pedidos || PEDIDOS;
-        FILTRADOS = [...PEDIDOS];
+    // Atualiza o status localmente NA HORA (rápido, sem esperar a Shopify)
+    const idsSet = new Set(itemIds.map(String));
+    PEDIDOS.forEach(p => {
+      if (idsSet.has(String(p.itemId)) && !['pronto','enviado','pronta_entrega'].includes(p.status)) {
+        p.status = 'em_producao';
+        p.listaNumero = lista.numero;
       }
-    } catch(e) { console.log('recarga de pedidos falhou:', e.message); }
+    });
+    FILTRADOS = [...PEDIDOS];
+
+    // Recarrega listas do banco e atualiza as telas imediatamente
+    await carregarListas();
     atualizarStats();
-    // Re-renderiza a lista atual já com os status atualizados
     if (typeof gerarListaFiltros === 'function') gerarListaFiltros();
     renderTabela(FILTRADOS);
     renderMinhasListas();
     if (typeof renderCal === 'function') renderCal();
+
+    // Re-sincroniza com o servidor em segundo plano (não trava o fluxo)
+    fetch('/api/pedidos').then(rp => rp.ok ? rp.json() : null).then(dp => {
+      if (dp && dp.pedidos) {
+        PEDIDOS = dp.pedidos;
+        FILTRADOS = [...PEDIDOS];
+        atualizarStats();
+        renderTabela(FILTRADOS);
+      }
+    }).catch(()=>{});
 
     // Guarda referência para impressão e mostra os botões no cabeçalho
     window._LISTA_GERADA = lista;
@@ -1692,11 +1812,10 @@ function baixarListaPDF() {
   baixarPDFdaLista(window._LISTA_GERADA.id);
 }
 
-// Abre a lista e dispara a impressão; no diálogo, basta escolher "Salvar como PDF"
+// Abre a lista em janela limpa para impressão; no diálogo, escolher "Salvar como PDF"
 function baixarPDFdaLista(id) {
-  verLista(id);
   toast('💡 Na janela que abrir, escolha "Salvar como PDF" no campo Destino');
-  setTimeout(() => window.print(), 600);
+  imprimirLista(id);
 }
 
 
