@@ -286,6 +286,8 @@ function extrairModeloCristal(title) {
 function extrairModeloBase(title) {
   if (!title) return 'Outros';
   const t = title.toLowerCase();
+  // Unifica todas as variações de documentos (porta documentos, kit documentos, etc.)
+  if (t.includes('documento')) return 'Porta Documentos';
   if (t.includes('cristal')) { const c = extrairModeloCristal(title); if (c) return c; }
   for (const m of MODELOS_MAP) { if (t.includes(m.termo)) return m.chave; }
   return title.replace(/\b(bolsa|mochila|mala|maternidade|ella|urban chic|nós|nos|origem|le petit|tressê palha|bege|preto|marinho|caramelo|café|cafe|cinza|bordô|bordo|off white|rosé|rose|marrom|verde|nude|vinho|rosa|azul|preta)\b/gi,'').replace(/\s+/g,' ').trim() || title;
@@ -308,6 +310,8 @@ function extrairColecaoCor(title, variant) {
 
 function expandirKit(item) {
   const title = item.title || '';
+  // Kits de documentos são um único produto — não quebrar em partes
+  if (title.toLowerCase().includes('documento')) return [item];
   if (!title.toLowerCase().includes('kit')) return [item];
   const parteDesc = title.replace(/^kit\s+[\w\sÀ-ú]+[-:]/i, '') || title;
   const partes = parteDesc.split(/,|\se\s/i).map(p => p.trim()).filter(p => p.length > 2);
