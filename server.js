@@ -429,7 +429,8 @@ function parseObs(note) {
     if (line.length > 2) extras.push(line);
   }
   const isUrgente = note.match(/urgente/i) !== null;
-  return { vendedora, dataEnvio, bordadoGeral, bordadosPorModelo, obsCliente: extras.join(' | ')||null, isProntaEntrega, isUrgente };
+  const isPrioridade = note.match(/prioridade/i) !== null;
+  return { vendedora, dataEnvio, bordadoGeral, bordadosPorModelo, obsCliente: extras.join(' | ')||null, isProntaEntrega, isUrgente, isPrioridade };
 }
 
 function getBordado(obs, modeloBase) {
@@ -528,10 +529,12 @@ function mapItem(order, item, isDraft, listasCache, idx) {
   const obs = parseObs(order.note);
   const modeloBase = extrairModeloBase(item.title);
   const dataEnvio = obs.dataEnvio || '—';
-  const lista = (listasCache||[]).find(l => l.pedidoIds && l.pedidoIds.includes(String(order.id)));
 
   // ID único do item
   const itemId = (isDraft ? 'D-' : '') + String(order.id) + '__' + String(item.id || 'li') + '__' + String(idx == null ? 0 : idx);
+
+  // Lista que contém ESTE item (por itemId)
+  const lista = (listasCache||[]).find(l => l.pedidoIds && l.pedidoIds.some(id => String(id) === String(itemId)));
 
   // Overrides: por item tem prioridade; cai no de pedido só como retaguarda (edições antigas)
   const ovItem = (listasCache||[])._overridesItem?.[itemId] || null;
@@ -574,6 +577,7 @@ function mapItem(order, item, isDraft, listasCache, idx) {
     noteRaw: order.note || '',
     status: statusFinal,
     isUrgente: obs.isUrgente || (order.tags||'').toLowerCase().includes('urgente'),
+    isPrioridade: obs.isPrioridade || (order.tags||'').toLowerCase().includes('prioridade'),
     isDraft, isKitItem: item.isKitItem||false, kitOriginal: item.kitOriginal||null,
     tags: order.tags||'', quantidade: item.quantity||1,
     listaNumero: lista ? lista.numero : null,
