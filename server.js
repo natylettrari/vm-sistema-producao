@@ -92,6 +92,26 @@ async function initDB() {
       criada_em TIMESTAMP DEFAULT NOW(),
       vendida_em TIMESTAMP
     );
+  CREATE TABLE IF NOT EXISTS listas_pe (
+      id TEXT PRIMARY KEY,
+      numero TEXT NOT NULL,
+      modelo TEXT NOT NULL,
+      data_envio TEXT,
+      criada_em TIMESTAMP DEFAULT NOW()
+    );
+  CREATE TABLE IF NOT EXISTS pecas_pe (
+      id TEXT PRIMARY KEY,
+      lista_id TEXT NOT NULL,
+      modelo TEXT NOT NULL,
+      colecao_cor TEXT,
+      bordado TEXT,
+      obs TEXT,
+      vendida BOOLEAN DEFAULT FALSE,
+      numero_pedido TEXT,
+      vendedora TEXT,
+      criada_em TIMESTAMP DEFAULT NOW(),
+      vendida_em TIMESTAMP
+    );
   `);
   // Garante a coluna item_id no histórico (para bancos que já existiam antes)
   try {
@@ -829,58 +849,118 @@ app.delete('/api/listas/:id', async (req,res) => {
   res.json({ok:true});
 });
 
-// ── Pronta Entrega (peças de estoque, ainda não vendidas) ─────────────────────
-// Lista todas as peças de pronta entrega
-app.get('/api/pronta-entrega', async (req,res) => {
+// ── Pronta Entrega (listas PE com peças, estoque vendável individualmente) ────
+
+// Lista todas as listas PE com suas peças
+app.get('/api/listas-pe', async (req,res) => {
   try {
-    const r = await pool.query(`SELECT * FROM pronta_entrega ORDER BY vendida ASC, criada_em DESC`);
-    res.json({ pecas: r.rows });
+    const lr = await pool.query(`SELECT * FROM listas_pe ORDER BY criada_em DESC`);
+    const pr = await pool.query(`SELECT * FROM pecas_pe ORDER BY criada_em ASC`);
+    const listas = lr.rows.map(l => ({
+      ...l,
+      pecas: pr.rows.filter(p => p.lista_id === l.id),
+    }));
+    res.json({ listas });
   } catch(e) { res.status(500).json({error:e.message}); }
 });
 
-// Adiciona uma peça de pronta entrega
-app.post('/api/pronta-entrega', async (req,res) => {
+// Catálogo de estoque: só peças disponíveis (não vendidas), com busca
+app.get('/api/pronta-entrega/estoque', async (req,res) => {
   try {
-    const { modelo, colecaoCor, bordado, dataEnvio, obs } = req.body;
+    const busca = (req.query.busca||'').toLowerCase().trim();
+    const r = await pool.query(`SELECT * FROM pecas_pe WHERE vendida=FALSE ORDER BY modelo ASC, colecao_cor ASC`);
+    let pecas = r.rows;
+    if (busca) {
+      pecas = pecas.filter(p =>
+        (p.modelo||'').toLowerCase().includes(busca) ||
+        (p.colecao_cor||'').toLowerCase().includes(busca) ||
+        (p.bordado||'').toLowerCase().includes(busca)
+      );
+    }
+    res.json({ pecas });
+  } catch(e) { res.status(500).json({error:e.message}); }
+});
+
+// Cria uma lista PE (numeração na mesma sequência das listas de produção)
+app.post('/api/listas-pe', async (req,res) => {
+  try {
+    const { modelo, dataEnvio } = req.body;
     if (!modelo || !modelo.trim()) return res.status(400).json({error:'Modelo é obrigatório'});
+    const numero = await proximoNumeroLista();
     const id = crypto.randomBytes(8).toString('hex');
     await pool.query(
-      `INSERT INTO pronta_entrega(id, modelo, colecao_cor, bordado, data_envio, obs, vendida)
-       VALUES($1,$2,$3,$4,$5,$6,FALSE)`,
-      [id, modelo.trim(), colecaoCor||null, bordado||null, dataEnvio||null, obs||null]
+      `INSERT INTO listas_pe(id, numero, modelo, data_envio) VALUES($1,$2,$3,$4)`,
+      [id, numero, modelo.trim(), dataEnvio||null]
+    );
+    res.json({ ok:true, id, numero });
+  } catch(e) { res.status(500).json({error:e.message}); }
+});
+
+// Exclui uma lista PE (e suas peças)
+app.delete('/api/listas-pe/:id', async (req,res) => {
+  try {
+    await pool.query(`DELETE FROM pecas_pe WHERE lista_id=$1`, [req.params.id]);
+    await pool.query(`DELETE FROM listas_pe WHERE id=$1`, [req.params.id]);
+    res.json({ ok:true });
+  } catch(e) { res.status(500).json({error:e.message}); }
+});
+
+// Adiciona uma peça a uma lista PE
+app.post('/api/listas-pe/:id/pecas', async (req,res) => {
+  try {
+    const { modelo, colecaoCor, bordado, obs, numeroPedido, vendedora } = req.body;
+    const lista = (await pool.query(`SELECT * FROM listas_pe WHERE id=$1`, [req.params.id])).rows[0];
+    if (!lista) return res.status(404).json({error:'Lista não encontrada'});
+    const id = crypto.randomBytes(8).toString('hex');
+    // Usa o modelo da peça se informado, senão herda o modelo da lista
+    await pool.query(
+      `INSERT INTO pecas_pe(id, lista_id, modelo, colecao_cor, bordado, obs, numero_pedido, vendedora, vendida)
+       VALUES($1,$2,$3,$4,$5,$6,$7,$8,FALSE)`,
+      [id, req.params.id, (modelo||lista.modelo).trim(), colecaoCor||null, bordado||null, obs||null, numeroPedido||null, vendedora||null]
     );
     res.json({ ok:true, id });
   } catch(e) { res.status(500).json({error:e.message}); }
 });
 
-// Marca uma peça como vendida (registra pedido e vendedora)
-app.post('/api/pronta-entrega/:id/vender', async (req,res) => {
+// Edita uma peça PE
+app.put('/api/pecas-pe/:id', async (req,res) => {
+  try {
+    const { modelo, colecaoCor, bordado, obs, numeroPedido, vendedora } = req.body;
+    await pool.query(
+      `UPDATE pecas_pe SET modelo=$2, colecao_cor=$3, bordado=$4, obs=$5, numero_pedido=$6, vendedora=$7 WHERE id=$1`,
+      [req.params.id, modelo, colecaoCor||null, bordado||null, obs||null, numeroPedido||null, vendedora||null]
+    );
+    res.json({ ok:true });
+  } catch(e) { res.status(500).json({error:e.message}); }
+});
+
+// Marca peça PE como vendida (registra pedido e vendedora) — sai do estoque
+app.post('/api/pecas-pe/:id/vender', async (req,res) => {
   try {
     const { numeroPedido, vendedora } = req.body;
     await pool.query(
-      `UPDATE pronta_entrega SET vendida=TRUE, numero_pedido=$2, vendedora=$3, vendida_em=NOW() WHERE id=$1`,
+      `UPDATE pecas_pe SET vendida=TRUE, numero_pedido=$2, vendedora=$3, vendida_em=NOW() WHERE id=$1`,
       [req.params.id, numeroPedido||null, vendedora||null]
     );
     res.json({ ok:true });
   } catch(e) { res.status(500).json({error:e.message}); }
 });
 
-// Edita uma peça de pronta entrega
-app.put('/api/pronta-entrega/:id', async (req,res) => {
+// Reverte a venda de uma peça (volta ao estoque)
+app.post('/api/pecas-pe/:id/devolver', async (req,res) => {
   try {
-    const { modelo, colecaoCor, bordado, dataEnvio, obs } = req.body;
     await pool.query(
-      `UPDATE pronta_entrega SET modelo=$2, colecao_cor=$3, bordado=$4, data_envio=$5, obs=$6 WHERE id=$1`,
-      [req.params.id, modelo, colecaoCor||null, bordado||null, dataEnvio||null, obs||null]
+      `UPDATE pecas_pe SET vendida=FALSE, numero_pedido=NULL, vendedora=NULL, vendida_em=NULL WHERE id=$1`,
+      [req.params.id]
     );
     res.json({ ok:true });
   } catch(e) { res.status(500).json({error:e.message}); }
 });
 
-// Exclui uma peça de pronta entrega
-app.delete('/api/pronta-entrega/:id', async (req,res) => {
+// Exclui uma peça PE
+app.delete('/api/pecas-pe/:id', async (req,res) => {
   try {
-    await pool.query(`DELETE FROM pronta_entrega WHERE id=$1`, [req.params.id]);
+    await pool.query(`DELETE FROM pecas_pe WHERE id=$1`, [req.params.id]);
     res.json({ ok:true });
   } catch(e) { res.status(500).json({error:e.message}); }
 });
