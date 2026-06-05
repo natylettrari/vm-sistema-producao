@@ -79,6 +79,19 @@ async function initDB() {
       lista_numero TEXT,
       atualizado_em TIMESTAMP DEFAULT NOW()
     );
+  CREATE TABLE IF NOT EXISTS pronta_entrega (
+      id TEXT PRIMARY KEY,
+      modelo TEXT NOT NULL,
+      colecao_cor TEXT,
+      bordado TEXT,
+      data_envio TEXT,
+      obs TEXT,
+      vendida BOOLEAN DEFAULT FALSE,
+      numero_pedido TEXT,
+      vendedora TEXT,
+      criada_em TIMESTAMP DEFAULT NOW(),
+      vendida_em TIMESTAMP
+    );
   `);
   // Garante a coluna item_id no histórico (para bancos que já existiam antes)
   try {
@@ -814,6 +827,62 @@ app.delete('/api/listas/:id', async (req,res) => {
   await deletarLista(req.params.id);
   CACHE_TS = 0;
   res.json({ok:true});
+});
+
+// ── Pronta Entrega (peças de estoque, ainda não vendidas) ─────────────────────
+// Lista todas as peças de pronta entrega
+app.get('/api/pronta-entrega', async (req,res) => {
+  try {
+    const r = await pool.query(`SELECT * FROM pronta_entrega ORDER BY vendida ASC, criada_em DESC`);
+    res.json({ pecas: r.rows });
+  } catch(e) { res.status(500).json({error:e.message}); }
+});
+
+// Adiciona uma peça de pronta entrega
+app.post('/api/pronta-entrega', async (req,res) => {
+  try {
+    const { modelo, colecaoCor, bordado, dataEnvio, obs } = req.body;
+    if (!modelo || !modelo.trim()) return res.status(400).json({error:'Modelo é obrigatório'});
+    const id = crypto.randomBytes(8).toString('hex');
+    await pool.query(
+      `INSERT INTO pronta_entrega(id, modelo, colecao_cor, bordado, data_envio, obs, vendida)
+       VALUES($1,$2,$3,$4,$5,$6,FALSE)`,
+      [id, modelo.trim(), colecaoCor||null, bordado||null, dataEnvio||null, obs||null]
+    );
+    res.json({ ok:true, id });
+  } catch(e) { res.status(500).json({error:e.message}); }
+});
+
+// Marca uma peça como vendida (registra pedido e vendedora)
+app.post('/api/pronta-entrega/:id/vender', async (req,res) => {
+  try {
+    const { numeroPedido, vendedora } = req.body;
+    await pool.query(
+      `UPDATE pronta_entrega SET vendida=TRUE, numero_pedido=$2, vendedora=$3, vendida_em=NOW() WHERE id=$1`,
+      [req.params.id, numeroPedido||null, vendedora||null]
+    );
+    res.json({ ok:true });
+  } catch(e) { res.status(500).json({error:e.message}); }
+});
+
+// Edita uma peça de pronta entrega
+app.put('/api/pronta-entrega/:id', async (req,res) => {
+  try {
+    const { modelo, colecaoCor, bordado, dataEnvio, obs } = req.body;
+    await pool.query(
+      `UPDATE pronta_entrega SET modelo=$2, colecao_cor=$3, bordado=$4, data_envio=$5, obs=$6 WHERE id=$1`,
+      [req.params.id, modelo, colecaoCor||null, bordado||null, dataEnvio||null, obs||null]
+    );
+    res.json({ ok:true });
+  } catch(e) { res.status(500).json({error:e.message}); }
+});
+
+// Exclui uma peça de pronta entrega
+app.delete('/api/pronta-entrega/:id', async (req,res) => {
+  try {
+    await pool.query(`DELETE FROM pronta_entrega WHERE id=$1`, [req.params.id]);
+    res.json({ ok:true });
+  } catch(e) { res.status(500).json({error:e.message}); }
 });
 
 app.post('/api/pedido/:id/status', async (req,res) => {
