@@ -814,15 +814,37 @@ app.get('/api/historico-geral', async (req,res) => {
       [limite]
     );
     const total = await pool.query(`SELECT COUNT(*)::int AS n FROM historico_pedidos`);
-    res.json({ historico: r.rows, total: total.rows[0]?.n || 0 });
+
+    // Cruza com dados atuais para enriquecer cada alteração
+    const listas = await loadListas();
+    const pedidosAtuais = CACHE_PEDIDOS || [];
+
+    const historico = r.rows.map(h => {
+      // Dados atuais do pedido (pega o primeiro item daquele order_id)
+      const pedidoAtual = pedidosAtuais.find(p => String(p.orderId) === String(h.order_id));
+      // Listas que contêm qualquer item deste pedido
+      const itensDoPedido = pedidosAtuais.filter(p => String(p.orderId) === String(h.order_id)).map(p => String(p.itemId));
+      const listasDoPedido = listas
+        .filter(l => Array.isArray(l.pedidoIds) && l.pedidoIds.some(id => itensDoPedido.includes(String(id))))
+        .map(l => l.numero);
+      return {
+        ...h,
+        modelo_atual: pedidoAtual ? pedidoAtual.modeloBase : null,
+        cor_atual: pedidoAtual ? pedidoAtual.colecaoCor : null,
+        em_listas: [...new Set(listasDoPedido)],
+      };
+    });
+
+    res.json({ historico, total: total.rows[0]?.n || 0 });
   } catch(e) { res.status(500).json({error:e.message}); }
 });
 
 app.post('/api/pedido/:id/editar', async (req,res) => {
   try {
     const { id } = req.params;
-    const { alteradoPor, campos } = req.body;
+    const { alteradoPor, numero, campos } = req.body;
     // campos = { modelo, colecaoCor, bordado, dataEnvio, vendedora }
+    const numPedido = numero || null;
 
     // Busca override atual
     const atual = await pool.query(`SELECT * FROM pedidos_editados WHERE order_id=$1`, [id]);
@@ -833,23 +855,23 @@ app.post('/api/pedido/:id/editar', async (req,res) => {
     const updates = {};
 
     if (campos.modelo !== undefined) {
-      historicoItens.push([id, dadosAtuais.numero, 'modelo', dadosAtuais.modelo_override||null, campos.modelo, alteradoPor]);
+      historicoItens.push([id, numPedido, 'modelo', dadosAtuais.modelo_override||null, campos.modelo, alteradoPor]);
       updates.modelo_override = campos.modelo;
     }
     if (campos.colecaoCor !== undefined) {
-      historicoItens.push([id, dadosAtuais.numero, 'colecao_cor', dadosAtuais.colecao_cor_override||null, campos.colecaoCor, alteradoPor]);
+      historicoItens.push([id, numPedido, 'colecao_cor', dadosAtuais.colecao_cor_override||null, campos.colecaoCor, alteradoPor]);
       updates.colecao_cor_override = campos.colecaoCor;
     }
     if (campos.bordado !== undefined) {
-      historicoItens.push([id, dadosAtuais.numero, 'bordado', dadosAtuais.bordado_override||null, campos.bordado, alteradoPor]);
+      historicoItens.push([id, numPedido, 'bordado', dadosAtuais.bordado_override||null, campos.bordado, alteradoPor]);
       updates.bordado_override = campos.bordado;
     }
     if (campos.dataEnvio !== undefined) {
-      historicoItens.push([id, dadosAtuais.numero, 'data_envio', dadosAtuais.data_envio_override||null, campos.dataEnvio, alteradoPor]);
+      historicoItens.push([id, numPedido, 'data_envio', dadosAtuais.data_envio_override||null, campos.dataEnvio, alteradoPor]);
       updates.data_envio_override = campos.dataEnvio;
     }
     if (campos.vendedora !== undefined) {
-      historicoItens.push([id, dadosAtuais.numero, 'vendedora', dadosAtuais.vendedora_override||null, campos.vendedora, alteradoPor]);
+      historicoItens.push([id, numPedido, 'vendedora', dadosAtuais.vendedora_override||null, campos.vendedora, alteradoPor]);
       updates.vendedora_override = campos.vendedora;
     }
 
