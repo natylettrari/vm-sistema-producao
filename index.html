@@ -241,6 +241,7 @@ input[type=checkbox]{accent-color:var(--rose);cursor:pointer}
     <button class="nav-btn" onclick="showSec('bordado',this)">Bordados</button>
     <button class="nav-btn" onclick="showSec('relatorios',this)">Relatórios</button>
     <button class="nav-btn" onclick="showSec('minhas-listas',this)">Minhas Listas</button>
+    <button class="nav-btn" onclick="showSec('alteracoes',this)" style="position:relative">Alterações<span id="badge-alteracoes" style="display:none;position:absolute;top:-2px;right:-2px;background:#c0392b;color:#fff;font-size:9px;min-width:16px;height:16px;border-radius:8px;padding:0 4px;line-height:16px;text-align:center">0</span></button>
   </div>
   <div style="display:flex;align-items:center;gap:8px">
     <span style="font-size:10px;color:var(--text3);display:flex;align-items:center;gap:4px"><span style="width:6px;height:6px;border-radius:50%;background:#4caf7d;display:inline-block"></span>Shopify</span>
@@ -582,6 +583,20 @@ input[type=checkbox]{accent-color:var(--rose);cursor:pointer}
   </div>
 </div>
 
+<!-- ALTERAÇÕES -->
+<div id="sec-alteracoes" class="section">
+  <div style="padding:20px 28px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;flex-wrap:wrap;gap:10px">
+      <div>
+        <div style="font-family:var(--serif);font-style:italic;font-size:22px;color:var(--rose)">Alterações de Pedidos</div>
+        <div style="font-size:12px;color:var(--text3);margin-top:2px">Histórico de edições feitas pelos colaboradores — mais recentes primeiro</div>
+      </div>
+      <button class="btn btn-outline" onclick="carregarAlteracoes()">Atualizar</button>
+    </div>
+    <div id="alteracoes-cont"><div class="loading"><span class="spin"></span>Carregando...</div></div>
+  </div>
+</div>
+
 <script>
 // ── Categorias ───────────────────────────────────────────────────────────────
 const BOLSAS = ['madison mini','madison','mala de rodinhas','madeleine','mochila 2 em 1','mochila mummy','louise mini','louise','bolsa cleo','bolsa cloé','bolsa cloe','bolsa liz','bolsa kate','frasqueira'];
@@ -617,6 +632,7 @@ document.addEventListener('DOMContentLoaded', () => {
   carregarModelos();
   carregarVendedoras();
   carregarListas();
+  verificarNovasAlteracoes();
 });
 
 function showSec(n,btn) {
@@ -629,6 +645,7 @@ function showSec(n,btn) {
   if(n==='ficha') carregarFicha();
   if(n==='bordado') carregarBordados();
   if(n==='minhas-listas') renderMinhasListas();
+  if(n==='alteracoes') carregarAlteracoes();
 }
 
 function toast(msg) {
@@ -669,6 +686,7 @@ async function syncTudo() {
     popularSelectsLote();
     const agora = new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'});
     document.getElementById('ped-info').textContent = PEDIDOS.length+' pedidos · Sincronizado às '+agora;
+    verificarNovasAlteracoes();
     toast('✅ ' + PEDIDOS.length + ' pedidos sincronizados!');
   } catch(e) {
     toast('Erro ao sincronizar: ' + e.message);
@@ -1257,6 +1275,93 @@ function renderMinhasListas() {
     
     ${!listas.length ? '<div class="loading">Nenhuma lista encontrada com os filtros aplicados</div>' : ''}
   `;
+}
+
+// ── Alterações de pedidos ─────────────────────────────────────────────────────
+const CAMPOS_ALTERACAO = { modelo:'Modelo', colecao_cor:'Cor / Coleção', bordado:'Bordado', data_envio:'Data de envio', vendedora:'Vendedora' };
+
+async function carregarAlteracoes() {
+  const el = document.getElementById('alteracoes-cont');
+  if (el) el.innerHTML = '<div class="loading"><span class="spin"></span>Carregando...</div>';
+  try {
+    const r = await fetch('/api/historico-geral');
+    const d = await r.json();
+    const hist = d.historico || [];
+    // Marca como "visto": zera o badge e guarda o total atual
+    ALTERACOES_TOTAL_VISTO = d.total || hist.length;
+    localStorage.setItem('VM_ALT_VISTO', String(ALTERACOES_TOTAL_VISTO));
+    atualizarBadgeAlteracoes(0);
+    renderAlteracoes(hist);
+  } catch(e) {
+    if (el) el.innerHTML = `<div class="err">Erro ao carregar alterações: ${e.message}</div>`;
+  }
+}
+
+function renderAlteracoes(hist) {
+  const el = document.getElementById('alteracoes-cont');
+  if (!el) return;
+  if (!hist.length) {
+    el.innerHTML = '<div class="loading">Nenhuma alteração registrada ainda</div>';
+    return;
+  }
+  el.innerHTML = hist.map(h => {
+    const campo = CAMPOS_ALTERACAO[h.campo] || h.campo;
+    const quando = new Date(h.alterado_em).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
+    const de = h.valor_anterior || '(vazio)';
+    const para = h.valor_novo || '(vazio)';
+    return `
+      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:9px;padding:12px 16px;margin-bottom:8px">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">
+          <div>
+            <span class="num" style="font-size:14px">${h.order_numero||'#'}</span>
+            <span style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-left:8px">${campo}</span>
+          </div>
+          <div style="font-size:11px;color:var(--text3)">${quando}</div>
+        </div>
+        <div style="margin-top:6px;font-size:13px">
+          <span style="color:#c0392b;text-decoration:line-through">${de}</span>
+          <span style="color:var(--text3);margin:0 8px">→</span>
+          <span style="color:#1e6640;font-weight:500">${para}</span>
+        </div>
+        <div style="font-size:11px;color:var(--text3);margin-top:4px">Por <strong>${h.alterado_por||'—'}</strong></div>
+      </div>`;
+  }).join('');
+}
+
+// Badge de novas alterações (atualizado ao recarregar/sincronizar)
+let ALTERACOES_TOTAL_VISTO = parseInt(localStorage.getItem('VM_ALT_VISTO')||'0') || 0;
+
+function atualizarBadgeAlteracoes(qtdNovas) {
+  const badge = document.getElementById('badge-alteracoes');
+  if (!badge) return;
+  if (qtdNovas > 0) {
+    badge.textContent = qtdNovas > 99 ? '99+' : qtdNovas;
+    badge.style.display = 'block';
+  } else {
+    badge.style.display = 'none';
+    localStorage.setItem('VM_ALT_VISTO', String(ALTERACOES_TOTAL_VISTO));
+  }
+}
+
+// Verifica quantas alterações novas existem desde a última visualização
+async function verificarNovasAlteracoes() {
+  try {
+    const r = await fetch('/api/historico-geral?limite=1');
+    const d = await r.json();
+    const totalAtual = d.total || 0;
+    const salvo = localStorage.getItem('VM_ALT_VISTO');
+    if (salvo === null) {
+      // Primeira visita: não marca tudo como novo, apenas registra o ponto de partida
+      ALTERACOES_TOTAL_VISTO = totalAtual;
+      localStorage.setItem('VM_ALT_VISTO', String(totalAtual));
+      atualizarBadgeAlteracoes(0);
+      return;
+    }
+    const visto = parseInt(salvo) || 0;
+    const novas = Math.max(0, totalAtual - visto);
+    ALTERACOES_TOTAL_VISTO = totalAtual;
+    atualizarBadgeAlteracoes(novas);
+  } catch(e) { /* silencioso */ }
 }
 
 async function imprimirLista(id) {
