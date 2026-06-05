@@ -805,6 +805,19 @@ app.get('/api/pedido/:id/historico', async (req,res) => {
   } catch(e) { res.status(500).json({error:e.message}); }
 });
 
+// Histórico geral de alterações (todas as edições de pedidos, mais recentes primeiro)
+app.get('/api/historico-geral', async (req,res) => {
+  try {
+    const limite = Math.min(parseInt(req.query.limite) || 200, 500);
+    const r = await pool.query(
+      `SELECT * FROM historico_pedidos ORDER BY alterado_em DESC LIMIT $1`,
+      [limite]
+    );
+    const total = await pool.query(`SELECT COUNT(*)::int AS n FROM historico_pedidos`);
+    res.json({ historico: r.rows, total: total.rows[0]?.n || 0 });
+  } catch(e) { res.status(500).json({error:e.message}); }
+});
+
 app.post('/api/pedido/:id/editar', async (req,res) => {
   try {
     const { id } = req.params;
