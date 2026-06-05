@@ -68,6 +68,9 @@ tbody tr:hover td{background:var(--rose-ll)}
 .urgente-row td{background:#fff8f0!important}
 .urgente-row:hover td{background:#fff0e0!important}
 .urgente-badge{display:inline-block;font-size:9px;padding:1px 6px;border-radius:3px;background:#e8470d;color:#fff;font-weight:600;letter-spacing:.04em;margin-left:3px;animation:pulse 1.5s infinite}
+.prioridade-row td{background:#fdf6f8!important}
+.prioridade-row:hover td{background:#f9ebef!important}
+.prio-badge{display:inline-block;font-size:9px;padding:1px 5px;border-radius:3px;background:#8A4C52;color:#fff;font-weight:600;letter-spacing:.04em;margin-left:3px}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.7}}
 .sem-data-row td{color:var(--text3)!important}
 .draft-pill,.kit-pill,.lista-pill{display:inline-block;font-size:9px;padding:1px 5px;border-radius:3px;margin-left:2px;font-weight:500}
@@ -275,7 +278,7 @@ input[type=checkbox]{accent-color:var(--rose);cursor:pointer}
     <select id="f-mod" onchange="filtrar()"><option value="">Todos os modelos</option></select>
     <select id="f-col" onchange="filtrar()"><option value="">Todas as coleções</option><option>Ella</option><option>Urban Chic</option><option>Nós</option><option>Origem</option><option>Le Petit</option><option>Tressê Palha</option></select>
     <select id="f-vend" onchange="filtrar()"><option value="">Todas as vendedoras</option></select>
-    <select id="f-st" onchange="filtrar()"><option value="">Todos os status</option><option value="aguardando">Aguardando</option><option value="em_producao">Em produção</option><option value="pronto">Pronto</option><option value="atrasado">Atrasado</option><option value="pronta_entrega">Pronta entrega</option><option value="enviado">Enviado</option></select>
+    <select id="f-st" onchange="filtrar()"><option value="">Todos os status</option><option value="aguardando">Aguardando</option><option value="em_producao">Em produção</option><option value="pronto">Pronto</option><option value="atrasado">Atrasado</option><option value="pronta_entrega">Pronta entrega</option><option value="enviado">Enviado</option><option value="__prioridade">★ Prioridade</option><option value="__urgente">! Urgente</option></select>
     <span style="font-size:11px;color:var(--text3)">De</span>
     <input type="date" id="f-de" onchange="filtrar()" style="width:128px">
     <span style="font-size:11px;color:var(--text3)">até</span>
@@ -802,9 +805,9 @@ function renderTabela(pedidos) {
     const mostrarAno = anoEnvio && parseInt(anoEnvio) !== new Date().getFullYear();
     const dataExib = (parts[0]&&parts[1] ? parts[0]+'/'+parts[1] : (p.dataEnvio||'—')) + (mostrarAno ? ` <span style="font-size:9px;background:#f0ecf7;color:var(--lilac);padding:1px 3px;border-radius:3px">${anoEnvio}</span>` : '');
     const duExib = (p.diasUteisRestantes!==null&&p.diasUteisRestantes!==undefined) ? `<div style="font-size:9px;color:${p.diasUteisRestantes<3?'#c0392b':p.diasUteisRestantes<7?'#8a6400':'var(--text3)'}">${p.diasUteisRestantes<0?'Atrasado':p.diasUteisRestantes+'du'}</div>` : '';
-    return `<tr class="${p.isUrgente?'urgente-row':''}">
+    return `<tr class="${p.isUrgente?'urgente-row':''}${p.isPrioridade?' prioridade-row':''}">
       <td style="width:28px"><input type="checkbox" class="rcb" data-id="${p.itemId}"></td>
-      <td style="width:85px" class="num">${p.numero}${p.isDraft?'<span class="draft-pill">D</span>':''}${p.isKitItem?'<span class="kit-pill">Kit</span>':''}${p.foiEditado?'<span class="edit-badge">Ed.</span>':''}${p.listaNumero?`<span class="lista-pill">#${p.listaNumero}</span>`:''}</td>
+      <td style="width:85px" class="num">${p.numero}${p.isDraft?'<span class="draft-pill">D</span>':''}${p.isKitItem?'<span class="kit-pill">Kit</span>':''}${p.isPrioridade?'<span class="prio-badge">★</span>':''}${p.foiEditado?'<span class="edit-badge">Ed.</span>':''}${p.listaNumero?`<span class="lista-pill" title="${p.listaDataProducao?'Sai em '+p.listaDataProducao:'Em produção'}">#${p.listaNumero}${p.listaDataProducao?' · '+p.listaDataProducao:''}</span>`:''}</td>
       <td style="width:65px;font-size:11px;color:var(--text3)">${p.dataPedido||'—'}</td>
       <td style="width:120px;font-weight:500;font-size:12px">${p.modeloBase}</td>
       <td style="width:130px;font-size:11px">${p.colecaoCor}</td>
@@ -856,7 +859,9 @@ function filtrar() {
     if(mod&&!(p.modeloBase||'').toLowerCase().includes(mod)&&!(p.modelo||'').toLowerCase().includes(mod)) return false;
     if(col&&!colecaoCombina(p.colecaoCor, col)) return false;
     if(vend&&!(p.vendedora||'').toLowerCase().includes(vend)) return false;
-    if(st&&p.status!==st) return false;
+    if(st==='__prioridade'){ if(!p.isPrioridade) return false; }
+    else if(st==='__urgente'){ if(!p.isUrgente) return false; }
+    else if(st&&p.status!==st) return false;
     if(de||ate){const pts=(p.dataEnvio||'').split('/');if(pts.length>=2){const yr=pts[2]||new Date().getFullYear();const d=new Date(`${yr}-${pts[1]}-${pts[0]}`);if(de&&d<new Date(de))return false;if(ate&&d>new Date(ate+'T23:59:59'))return false;}}
     return true;
   });
@@ -1565,11 +1570,11 @@ function gerarListaFiltros() {
     peds = peds.filter(p => getTipo(p.modeloBase) === TIPO_SEL);
   }
 
-  // Urgentes sempre no topo dentro de cada grupo
+  // Urgentes e prioritários sempre no topo dentro de cada grupo
   peds.sort((a,b) => {
-    if(a.isUrgente && !b.isUrgente) return -1;
-    if(!a.isUrgente && b.isUrgente) return 1;
-    return 0;
+    const pa = (a.isUrgente?2:0) + (a.isPrioridade?1:0);
+    const pb = (b.isUrgente?2:0) + (b.isPrioridade?1:0);
+    return pb - pa;
   });
   const grupos=agrupar(peds,ordBy);
   renderLista(peds,grupos,ordBy,de,ate);
@@ -2103,7 +2108,8 @@ async function excluirListaModal(id) {
   if (!confirm('Excluir esta lista?')) return;
   await fetch('/api/listas/'+id,{method:'DELETE'});
   LISTAS=LISTAS.filter(l=>l.id!==id);
-  fecharModal(); renderCal(); renderMinhasListas(); toast('Lista excluída');
+  await recarregarAposExcluir();
+  fecharModal(); renderCal(); renderMinhasListas(); toast('Lista excluída — itens liberados da produção');
 }
 
 function clicarNoDia(data, nListas, e) {
@@ -2193,7 +2199,23 @@ async function excluirLista(id) {
   if(!confirm('Excluir esta lista?')) return;
   await fetch('/api/listas/'+id,{method:'DELETE'});
   LISTAS=LISTAS.filter(l=>l.id!==id);
-  renderCal(); toast('Lista excluída');
+  await recarregarAposExcluir();
+  renderCal(); toast('Lista excluída — itens liberados da produção');
+}
+
+// Recarrega os pedidos do servidor (status já liberado no banco) e atualiza as telas
+async function recarregarAposExcluir() {
+  try {
+    const rp = await fetch('/api/pedidos');
+    if (rp.ok) {
+      const dp = await rp.json();
+      PEDIDOS = dp.pedidos || PEDIDOS;
+      FILTRADOS = [...PEDIDOS];
+      atualizarStats();
+      if (typeof gerarListaFiltros === 'function' && document.getElementById('sec-lista')?.classList.contains('active')) gerarListaFiltros();
+      renderTabela(FILTRADOS);
+    }
+  } catch(e) { console.log('recarga após excluir falhou:', e.message); }
 }
 
 function verLista(id) {
