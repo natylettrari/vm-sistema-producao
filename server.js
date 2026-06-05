@@ -542,7 +542,7 @@ function mapItem(order, item, isDraft, listasCache, idx) {
     dataPedido: fmtDate(order.created_at),
     dataEnvio: dataEnvioFinal, diasUteisRestantes: diasUteisAte(dataEnvioFinal),
     vendedora: vendedoraFinal,
-    modeloBase: modeloFinal, modelo: ov?.modelo_override || item.title,
+    modeloBase: modeloFinal, modelo: (ovItem && ovItem.modelo_override) || item.title,
     colecaoCor: colecaoCorFinal,
     bordado: bordadoFinal,
     foiEditado: foiEditado,
