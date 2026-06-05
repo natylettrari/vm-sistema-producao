@@ -811,7 +811,7 @@ function renderTabela(pedidos) {
       <td style="width:80px"><span class="tv">${p.vendedora}</span></td>
       <td style="width:75px;font-size:11px${p.status==='atrasado'?';color:#c0392b;font-weight:500':''}">${dataExib}${duExib}</td>
       <td style="width:95px"><span class="bdg ${SC[p.status]||'bw'}" onclick="mostrarOpcoesStatus('${p.orderId}','${p.numero}',event)" style="cursor:pointer;user-select:none" title="Clique para alterar status">${SL[p.status]||p.status}</span></td>
-      <td style="width:70px"><button class="edit-btn" onclick="abrirEdicao('${p.orderId}','${p.numero}',event)">✏️ Editar</button></td>
+      <td style="width:70px"><button class="edit-btn" onclick="abrirEdicao('${p.itemId}','${p.orderId}','${p.numero}',event)">✏️ Editar</button></td>
     </tr>`;
   }).join('');
   document.getElementById('ped-cont').innerHTML = `<table>
@@ -2513,7 +2513,7 @@ function popularSelectsLote() {
 // ── Edição de pedidos ─────────────────────────────────────────────────────────
 let EDITOR_NOME = null;
 
-async function abrirEdicao(orderId, numero, e) {
+async function abrirEdicao(itemId, orderId, numero, e) {
   e.stopPropagation();
 
   // Pede nome se não tiver
@@ -2523,7 +2523,7 @@ async function abrirEdicao(orderId, numero, e) {
     EDITOR_NOME = nome.trim();
   }
 
-  const pedido = PEDIDOS.find(p => p.orderId === orderId);
+  const pedido = PEDIDOS.find(p => p.itemId === itemId);
   if (!pedido) return;
 
   // Carrega histórico
@@ -2574,7 +2574,7 @@ async function abrirEdicao(orderId, numero, e) {
       </div>
 
       <div style="display:flex;gap:8px;margin-bottom:${historico.length?'16px':'0'}">
-        <button class="btn btn-rose" style="flex:1;padding:9px" onclick="salvarEdicao('${orderId}','${numero}')">Salvar alterações</button>
+        <button class="btn btn-rose" style="flex:1;padding:9px" onclick="salvarEdicao('${itemId}','${orderId}','${numero}')">Salvar alterações</button>
         <button class="btn btn-outline" style="padding:9px 14px" onclick="fecharModalEdicao()">Cancelar</button>
       </div>
 
@@ -2664,8 +2664,8 @@ function mostrarOpcoesStatus(orderId, numero, event) {
   }, 100);
 }
 
-async function salvarEdicao(orderId, numero) {
-  const pedido = PEDIDOS.find(p => p.orderId === orderId);
+async function salvarEdicao(itemId, orderId, numero) {
+  const pedido = PEDIDOS.find(p => p.itemId === itemId);
   if (!pedido) return;
 
   const campos = {};
@@ -2686,7 +2686,7 @@ async function salvarEdicao(orderId, numero) {
   try {
     const r = await fetch('/api/pedido/'+orderId+'/editar', {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ alteradoPor: EDITOR_NOME, numero: numero, campos })
+      body: JSON.stringify({ alteradoPor: EDITOR_NOME, numero: numero, itemId: itemId, campos })
     });
     if (!r.ok) throw new Error('Erro ao salvar');
 
