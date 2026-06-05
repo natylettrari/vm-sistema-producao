@@ -388,6 +388,25 @@ function parseObs(note) {
         ['mala','mochila','bolsa','madison','louise','trocador','necessaire','porta','kit','alça','alca','frasqueira','pingente','kate','liz','cleo','cloé','cristal'].some(k => key.includes(k));
       if (isModelo) { bordadosPorModelo[key] = val.match(/^(sem\s*bordado|s\/bordado|sem|s\/|s\/b)$/i) ? null : val; continue; }
     }
+
+    // Formato solto: "MODELO na alça NOME" (personalização de alça, vira "Alça: NOME")
+    const mAlca = line.match(/^([A-ZÀ-Úa-zà-ú\s0-9]+?)\s*[-–]?\s*na\s+al[çc]a\s+(.+)/i);
+    if (mAlca) {
+      const key = mAlca[1].trim().toLowerCase();
+      const isModelo = MODELOS_MAP.some(m => key.includes(m.termo)) ||
+        ['mala','mochila','bolsa','madison','louise','trocador','necessaire','porta','kit','frasqueira','pingente','kate','liz','cleo','cloé','cristal','documento','rodinha'].some(k => key.includes(k));
+      if (isModelo) { bordadosPorModelo[key] = 'Alça: ' + mAlca[2].trim(); continue; }
+    }
+
+    // Formato solto: "MODELO BORDADO VALOR" sem separador (ex: "Mala Rodinha BORDADO LA")
+    const mBordSolto = line.match(/^([A-ZÀ-Úa-zà-ú\s0-9]+?)\s+BORDADO\s+(.+)/i);
+    if (mBordSolto) {
+      const key = mBordSolto[1].trim().toLowerCase().replace(/^\d+\s+/, ''); // remove "1 " do início
+      const val = mBordSolto[2].trim();
+      const isModelo = MODELOS_MAP.some(m => key.includes(m.termo)) ||
+        ['mala','mochila','bolsa','madison','louise','trocador','necessaire','porta','kit','frasqueira','pingente','kate','liz','cleo','cloé','cristal','documento','rodinha'].some(k => key.includes(k));
+      if (isModelo) { bordadosPorModelo[key] = val.match(/^(sem\s*bordado|s\/bordado|sem|s\/|s\/b)$/i) ? null : val; continue; }
+    }
     const m1b = line.match(/^(?:ENVIO|ENV|ENTREGA|ENVIAR)[:\s]+(?:DIA\s+)?(\d{1,2}[\/.\-]\d{1,2}(?:[\/.\-]\d{2,4})?)/i);
     if (m1b && !dataEnvio) { dataEnvio = normalizarData(m1b[1]); continue; }
     const m2 = line.match(/^([A-ZÀ-Úa-zà-ú\s0-9]+?):\s*(?:BORDADO[:\s]+)?(.+)/i);
@@ -453,7 +472,7 @@ function getBordado(obs, modeloBase) {
     'bolsa cleo': ['cleo','bolsa cleo'],
     'porta look': ['kit porta look','porta look'],
     'trocador': ['trocador portátil','trocador portatil'],
-    'kit documentos': ['kit de documentos','kit documentos','porta documentos'],
+    'kit documentos': ['kit de documentos','kit documentos','kit documento','porta documentos','porta documento','documento'],
   };
   for (const [modelo, alts] of Object.entries(aliases)) {
     if (mb.includes(modelo) || alts.some(a => mb.includes(a))) {
