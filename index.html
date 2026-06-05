@@ -610,9 +610,9 @@ input[type=checkbox]{accent-color:var(--rose);cursor:pointer}
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px">
       <div>
         <div style="font-family:var(--serif);font-style:italic;font-size:22px;color:var(--rose)">Pronta Entrega</div>
-        <div style="font-size:12px;color:var(--text3);margin-top:2px">Peças produzidas para estoque — registre a venda quando vender</div>
+        <div style="font-size:12px;color:var(--text3);margin-top:2px">Estoque de peças produzidas — busque e registre vendas</div>
       </div>
-      <button class="btn btn-rose" onclick="abrirFormPE()">+ Adicionar peça</button>
+      <button class="btn btn-rose" onclick="abrirFormPE()">+ Nova lista PE</button>
     </div>
     <div id="pe-cont"><div class="loading"><span class="spin"></span>Carregando...</div></div>
   </div>
@@ -750,6 +750,14 @@ async function carregarListas() {
     console.log('API de listas indisponível:', e.message);
     LISTAS = [];
   }
+  // Carrega também as listas de pronta entrega (para exibir em Minhas Listas)
+  try {
+    const rpe = await fetch('/api/listas-pe');
+    if (rpe.ok) {
+      const dpe = await rpe.json();
+      LISTAS_PE = dpe.listas || [];
+    }
+  } catch(e) { /* silencioso */ }
 }
 
 function atualizarStats() {
@@ -944,6 +952,7 @@ function limparFL() {
 let LISTAS_ORDEM = 'recentes'; // 'recentes', 'antigas', 'lote', 'numero', 'data_producao'
 let LISTAS_FILTRO_LOTE = '';
 let LISTAS_FILTRO_MES = '';
+let LISTAS_FILTRO_BUSCA = '';
 let TODOS_LOTES = [];
 
 function atualizarContLotes() {
@@ -1155,13 +1164,23 @@ function renderMinhasListas() {
   const el = document.getElementById('minhas-listas-cont');
   if (!el) return;
 
-  if (!LISTAS.length) {
+  if (!LISTAS.length && !(LISTAS_PE && LISTAS_PE.length)) {
     el.innerHTML = '<div class="loading">Nenhuma lista gerada ainda</div>';
     return;
   }
 
   // Filtros e organização
   let listas = [...LISTAS];
+
+  // Filtro de busca por modelo/número/nome
+  if (LISTAS_FILTRO_BUSCA && LISTAS_FILTRO_BUSCA.trim()) {
+    const b = LISTAS_FILTRO_BUSCA.toLowerCase().trim();
+    listas = listas.filter(l =>
+      (l.nome||'').toLowerCase().includes(b) ||
+      (l.numero||'').toLowerCase().includes(b) ||
+      (Array.isArray(l.modelos) ? l.modelos.join(' ').toLowerCase().includes(b) : false)
+    );
+  }
 
   // Aplicar filtros
   if (LISTAS_FILTRO_LOTE) {
@@ -1216,6 +1235,9 @@ function renderMinhasListas() {
     <!-- Controles de organização -->
     <div style="background:var(--bg3);border:1px solid var(--border);border-radius:8px;padding:12px 16px;margin-bottom:16px">
       <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:center">
+        <div style="display:flex;align-items:center;gap:6px">
+          <input id="ml-busca" value="${LISTAS_FILTRO_BUSCA||''}" placeholder="🔍 Buscar modelo/nº" oninput="LISTAS_FILTRO_BUSCA=this.value; renderMinhasListas(); setTimeout(()=>{const e=document.getElementById('ml-busca'); if(e){e.focus();e.setSelectionRange(e.value.length,e.value.length);}},10)" style="font-size:11px;padding:5px 9px;border-radius:6px;border:1px solid var(--border2);background:var(--bg2);width:150px">
+        </div>
         <div style="display:flex;align-items:center;gap:6px">
           <span style="font-size:10px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em">Ordenar:</span>
           <select onchange="LISTAS_ORDEM=this.value; renderMinhasListas()" style="font-size:11px;padding:4px 8px;border-radius:6px;border:1px solid var(--border2);background:var(--bg2)">
@@ -1297,7 +1319,45 @@ function renderMinhasListas() {
       `).join('')}
     </div>
     
-    ${!listas.length ? '<div class="loading">Nenhuma lista encontrada com os filtros aplicados</div>' : ''}
+    ${!listas.length ? '<div class="loading">Nenhuma lista de produção encontrada com os filtros aplicados</div>' : ''}
+
+    ${(() => {
+      let listasPeFiltradas = LISTAS_PE || [];
+      if (LISTAS_FILTRO_BUSCA && LISTAS_FILTRO_BUSCA.trim()) {
+        const b = LISTAS_FILTRO_BUSCA.toLowerCase().trim();
+        listasPeFiltradas = listasPeFiltradas.filter(l => (l.modelo||'').toLowerCase().includes(b) || ('pe #'+(l.numero||'')).toLowerCase().includes(b) || (l.numero||'').toLowerCase().includes(b));
+      }
+      return listasPeFiltradas.length ? `
+      <div style="margin-top:26px;margin-bottom:12px;font-family:var(--serif);font-style:italic;font-size:18px;color:#1e6640">Listas de Pronta Entrega</div>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px">
+        ${listasPeFiltradas.map(l => {
+          const pecas = l.pecas || [];
+          const disp = pecas.filter(p=>!p.vendida).length;
+          const vend = pecas.filter(p=>p.vendida).length;
+          return `
+            <div style="background:#f3faf5;border:1px solid #a8d8b8;border-radius:10px;padding:16px 20px">
+              <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:10px">
+                <div>
+                  <div style="font-family:var(--serif);font-style:italic;font-size:20px;color:#1e6640">PE #${l.numero}</div>
+                  <div style="font-size:13px;font-weight:500;color:var(--text);margin-top:2px">${l.modelo}</div>
+                </div>
+                <span class="bdg" style="background:#edf7f1;color:#1e6640">Pronta entrega</span>
+              </div>
+              <div style="font-size:11px;color:var(--text3);display:flex;flex-direction:column;gap:3px">
+                <div>📦 <strong>${pecas.length}</strong> peças · ${disp} disponíveis · ${vend} vendidas</div>
+                ${l.data_envio?`<div>📅 Envio: <strong>${l.data_envio}</strong></div>`:''}
+                <div>🗓️ Criada: ${new Date(l.criada_em).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric'})}</div>
+              </div>
+              <div style="display:flex;gap:6px;margin-top:12px;flex-wrap:wrap">
+                <button class="btn btn-rose btn-sm" onclick="showSec('pronta-entrega',document.querySelector('.nav-btn[onclick*=pronta-entrega]'));PE_ABA='listas';setTimeout(renderPE,50)">Abrir na aba PE</button>
+                <div style="flex:1"></div>
+                <button class="btn btn-outline btn-sm" style="color:#c0392b;border-color:#f5c6c2" onclick="excluirListaPE('${l.id}')">Excluir</button>
+              </div>
+            </div>`;
+        }).join('')}
+      </div>
+    ` : '';
+    })()}
   `;
 }
 
@@ -1398,16 +1458,17 @@ async function verificarNovasAlteracoes() {
   } catch(e) { /* silencioso */ }
 }
 
-// ── Pronta Entrega ────────────────────────────────────────────────────────────
-let PECAS_PE = [];
+// ── Pronta Entrega (listas PE + peças + catálogo de estoque) ──────────────────
+let LISTAS_PE = [];
+let PE_ABA = 'estoque'; // 'estoque' ou 'listas'
 
 async function carregarPE() {
   const el = document.getElementById('pe-cont');
   if (el) el.innerHTML = '<div class="loading"><span class="spin"></span>Carregando...</div>';
   try {
-    const r = await fetch('/api/pronta-entrega');
+    const r = await fetch('/api/listas-pe');
     const d = await r.json();
-    PECAS_PE = d.pecas || [];
+    LISTAS_PE = d.listas || [];
     renderPE();
   } catch(e) {
     if (el) el.innerHTML = `<div class="err">Erro ao carregar: ${e.message}</div>`;
@@ -1417,161 +1478,349 @@ async function carregarPE() {
 function renderPE() {
   const el = document.getElementById('pe-cont');
   if (!el) return;
-  const disponiveis = PECAS_PE.filter(p => !p.vendida);
-  const vendidas = PECAS_PE.filter(p => p.vendida);
-
-  if (!PECAS_PE.length) {
-    el.innerHTML = '<div class="loading">Nenhuma peça de pronta entrega ainda. Clique em "+ Adicionar peça".</div>';
-    return;
-  }
-
-  const cardPeca = (p, vendida) => `
-    <div style="background:var(--bg2);border:1px solid ${vendida?'var(--border)':'#a8d8b8'};border-radius:9px;padding:12px 16px;margin-bottom:8px">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">
-        <div>
-          <span style="font-weight:600;font-size:14px;color:var(--text)">${p.modelo}</span>
-          ${p.colecao_cor?`<span style="font-size:12px;color:var(--text2);margin-left:8px">${p.colecao_cor}</span>`:''}
-          ${p.bordado?`<span style="font-size:11px;color:var(--rose);margin-left:8px">${p.bordado}</span>`:''}
-        </div>
-        ${vendida
-          ? `<span style="font-size:11px;background:#edf7f1;color:#1e6640;padding:3px 9px;border-radius:5px">✓ Vendida${p.numero_pedido?' · '+p.numero_pedido:''}${p.vendedora?' · '+p.vendedora:''}</span>`
-          : `<div style="display:flex;gap:6px">
-               <button class="btn btn-rose btn-sm" onclick="abrirVenderPE('${p.id}')">Marcar vendida</button>
-               <button class="btn btn-outline btn-sm" onclick="excluirPE('${p.id}')">Excluir</button>
-             </div>`}
-      </div>
-      ${p.data_envio?`<div style="font-size:11px;color:var(--text3);margin-top:5px">Envio: ${p.data_envio}</div>`:''}
-      ${p.obs?`<div style="font-size:11px;color:var(--text3);margin-top:3px">Obs: ${p.obs}</div>`:''}
+  const abas = `
+    <div style="display:flex;gap:8px;margin-bottom:16px">
+      <button class="btn ${PE_ABA==='estoque'?'btn-rose':'btn-outline'} btn-sm" onclick="trocarAbaPE('estoque')">📦 Estoque disponível</button>
+      <button class="btn ${PE_ABA==='listas'?'btn-rose':'btn-outline'} btn-sm" onclick="trocarAbaPE('listas')">📋 Listas de produção PE</button>
     </div>`;
-
-  el.innerHTML = `
-    <div style="margin-bottom:18px">
-      <div style="font-size:13px;color:var(--text2);font-weight:600;margin-bottom:8px">Disponíveis em estoque (${disponiveis.length})</div>
-      ${disponiveis.length ? disponiveis.map(p=>cardPeca(p,false)).join('') : '<div style="font-size:12px;color:var(--text3);padding:8px">Nenhuma peça disponível.</div>'}
-    </div>
-    ${vendidas.length ? `<div>
-      <div style="font-size:13px;color:var(--text2);font-weight:600;margin-bottom:8px">Já vendidas (${vendidas.length})</div>
-      ${vendidas.map(p=>cardPeca(p,true)).join('')}
-    </div>` : ''}`;
+  if (PE_ABA === 'estoque') {
+    el.innerHTML = abas + `
+      <div style="margin-bottom:14px">
+        <input id="pe-busca" placeholder="🔍 Buscar por modelo ou cor (ex: Madison, Ella Caramelo)" oninput="renderEstoquePE()"
+          style="width:100%;max-width:480px;font-size:13px;padding:9px 13px;border-radius:8px;border:1px solid var(--border2);background:var(--bg2)">
+      </div>
+      <div id="pe-estoque-cont"></div>`;
+    renderEstoquePE();
+  } else {
+    el.innerHTML = abas + renderListasPE();
+  }
 }
 
+function trocarAbaPE(aba) { PE_ABA = aba; renderPE(); }
+
+// Catálogo de estoque: todas as peças não vendidas de todas as listas PE
+function renderEstoquePE() {
+  const cont = document.getElementById('pe-estoque-cont');
+  if (!cont) return;
+  const busca = (document.getElementById('pe-busca')||{value:''}).value.toLowerCase().trim();
+  let disponiveis = [];
+  LISTAS_PE.forEach(l => (l.pecas||[]).forEach(p => { if(!p.vendida) disponiveis.push({...p, listaNumero:l.numero}); }));
+  if (busca) {
+    disponiveis = disponiveis.filter(p =>
+      (p.modelo||'').toLowerCase().includes(busca) ||
+      (p.colecao_cor||'').toLowerCase().includes(busca) ||
+      (p.bordado||'').toLowerCase().includes(busca)
+    );
+  }
+  if (!disponiveis.length) {
+    cont.innerHTML = `<div style="font-size:13px;color:var(--text3);padding:14px">${busca?'Nenhuma peça disponível para essa busca.':'Nenhuma peça em estoque. Crie uma lista PE e adicione peças.'}</div>`;
+    return;
+  }
+  // Agrupa por modelo
+  const porModelo = {};
+  disponiveis.forEach(p => { (porModelo[p.modelo] = porModelo[p.modelo]||[]).push(p); });
+  cont.innerHTML = `
+    <div style="font-size:12px;color:var(--text2);margin-bottom:10px">${disponiveis.length} peça${disponiveis.length>1?'s':''} disponíve${disponiveis.length>1?'is':'l'} em estoque</div>
+    ${Object.entries(porModelo).map(([modelo, pecas]) => `
+      <div style="margin-bottom:16px">
+        <div style="font-weight:600;font-size:14px;color:var(--rose);margin-bottom:8px">${modelo} <span style="color:var(--text3);font-weight:400">· ${pecas.length}</span></div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px">
+          ${pecas.map(p => `
+            <div style="background:#f3faf5;border:1px solid #a8d8b8;border-radius:8px;padding:10px 13px">
+              <div style="font-size:13px;font-weight:500">${p.colecao_cor||'(sem cor)'}</div>
+              ${p.bordado?`<div style="font-size:11px;color:var(--rose);margin-top:2px">${p.bordado}</div>`:''}
+              <div style="display:flex;gap:6px;margin-top:8px">
+                <button class="btn btn-rose btn-sm" style="flex:1" onclick="abrirVenderPeca('${p.id}')">Vender</button>
+                <button class="btn btn-outline btn-sm" onclick="abrirEditarPeca('${p.id}')">✏️</button>
+              </div>
+            </div>`).join('')}
+        </div>
+      </div>`).join('')}`;
+}
+
+// Listas PE de produção
+function renderListasPE() {
+  if (!LISTAS_PE.length) return '<div style="font-size:13px;color:var(--text3);padding:14px">Nenhuma lista PE ainda. Clique em "+ Nova lista PE".</div>';
+  return LISTAS_PE.map(l => {
+    const pecas = l.pecas || [];
+    const disp = pecas.filter(p=>!p.vendida).length;
+    const vend = pecas.filter(p=>p.vendida).length;
+    return `
+      <div style="background:#f3faf5;border:1px solid #a8d8b8;border-radius:10px;padding:14px 18px;margin-bottom:12px">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">
+          <div>
+            <span style="font-family:var(--serif);font-style:italic;font-size:17px;color:#1e6640">Lista PE #${l.numero} · ${l.modelo}</span>
+            <div style="font-size:11px;color:var(--text3);margin-top:2px">${pecas.length} peça${pecas.length!==1?'s':''} · ${disp} disponíve${disp!==1?'is':'l'} · ${vend} vendida${vend!==1?'s':''}${l.data_envio?' · Envio '+l.data_envio:''}</div>
+          </div>
+          <div style="display:flex;gap:6px">
+            <button class="btn btn-rose btn-sm" onclick="abrirAddPeca('${l.id}')">+ Peça</button>
+            <button class="btn btn-outline btn-sm" onclick="excluirListaPE('${l.id}')">Excluir lista</button>
+          </div>
+        </div>
+        ${pecas.length ? `<div style="margin-top:10px;display:flex;flex-direction:column;gap:5px">
+          ${pecas.map(p => `
+            <div style="display:flex;justify-content:space-between;align-items:center;background:var(--bg2);border-radius:6px;padding:6px 11px;${p.vendida?'opacity:.6':''}">
+              <div style="font-size:12px">
+                <span style="font-weight:500">${p.colecao_cor||'(sem cor)'}</span>
+                ${p.bordado?`<span style="color:var(--rose);margin-left:6px">${p.bordado}</span>`:''}
+                ${p.vendida?`<span style="color:#1e6640;margin-left:6px">✓ ${p.numero_pedido||''} ${p.vendedora||''}</span>`:''}
+              </div>
+              <div style="display:flex;gap:5px">
+                ${p.vendida
+                  ? `<button class="btn btn-outline btn-sm" onclick="devolverPeca('${p.id}')">Devolver ao estoque</button>`
+                  : `<button class="btn btn-rose btn-sm" onclick="abrirVenderPeca('${p.id}')">Vender</button>
+                     <button class="btn btn-outline btn-sm" onclick="abrirEditarPeca('${p.id}')">✏️</button>
+                     <button class="btn btn-outline btn-sm" onclick="excluirPeca('${p.id}')">×</button>`}
+              </div>
+            </div>`).join('')}
+        </div>` : '<div style="font-size:12px;color:var(--text3);margin-top:8px">Nenhuma peça nesta lista ainda.</div>'}
+      </div>`;
+  }).join('');
+}
+
+// Helper: acha uma peça pelo id em todas as listas
+function acharPecaPE(id) {
+  for (const l of LISTAS_PE) {
+    const p = (l.pecas||[]).find(x => x.id === id);
+    if (p) return p;
+  }
+  return null;
+}
+
+// Criar nova lista PE (escolhe o modelo)
 function abrirFormPE() {
   const modal = document.createElement('div');
   modal.className = 'cal-modal';
   modal.id = 'modal-pe';
   modal.innerHTML = `
-    <div class="cal-modal-box" style="max-width:480px;width:95vw">
-      <div style="font-family:var(--serif);font-style:italic;font-size:19px;color:var(--rose);margin-bottom:14px">Adicionar peça de pronta entrega</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
-        <div style="grid-column:1/3">
-          <label style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);display:block;margin-bottom:4px">Modelo *</label>
-          <input id="pe-modelo" placeholder="Ex: Madison" style="width:100%;font-size:13px;padding:8px 11px;border-radius:7px;border:1px solid var(--border2);background:var(--bg2)">
-        </div>
-        <div>
-          <label style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);display:block;margin-bottom:4px">Cor / Coleção</label>
-          <input id="pe-cor" placeholder="Ex: Ella Café" style="width:100%;font-size:13px;padding:8px 11px;border-radius:7px;border:1px solid var(--border2);background:var(--bg2)">
-        </div>
-        <div>
-          <label style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);display:block;margin-bottom:4px">Bordado</label>
-          <input id="pe-bordado" placeholder="Opcional" style="width:100%;font-size:13px;padding:8px 11px;border-radius:7px;border:1px solid var(--border2);background:var(--bg2)">
-        </div>
-        <div>
-          <label style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);display:block;margin-bottom:4px">Data de envio</label>
-          <input id="pe-data" placeholder="Ex: 30/06/2026" style="width:100%;font-size:13px;padding:8px 11px;border-radius:7px;border:1px solid var(--border2);background:var(--bg2)">
-        </div>
-        <div>
-          <label style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);display:block;margin-bottom:4px">Observação</label>
-          <input id="pe-obs" placeholder="Opcional" style="width:100%;font-size:13px;padding:8px 11px;border-radius:7px;border:1px solid var(--border2);background:var(--bg2)">
-        </div>
+    <div class="cal-modal-box" style="max-width:420px;width:95vw">
+      <div style="font-family:var(--serif);font-style:italic;font-size:19px;color:var(--rose);margin-bottom:14px">Nova lista de pronta entrega</div>
+      <div style="margin-bottom:12px">
+        <label style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);display:block;margin-bottom:4px">Modelo *</label>
+        <input id="pe-novo-modelo" placeholder="Ex: Madison" style="width:100%;font-size:13px;padding:9px 12px;border-radius:7px;border:1px solid var(--border2);background:var(--bg2)">
       </div>
-      <div style="font-size:11px;color:var(--text3);margin-bottom:14px">O número do pedido e a vendedora ficam em branco — você preenche quando a peça for vendida.</div>
+      <div style="margin-bottom:16px">
+        <label style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);display:block;margin-bottom:4px">Data de envio (opcional)</label>
+        <input id="pe-novo-data" placeholder="Ex: 30/06/2026" style="width:100%;font-size:13px;padding:9px 12px;border-radius:7px;border:1px solid var(--border2);background:var(--bg2)">
+      </div>
+      <div style="font-size:11px;color:var(--text3);margin-bottom:14px">A lista vai se chamar "Lista PE #(número) · (modelo)". Depois você adiciona as peças dentro dela.</div>
       <div style="display:flex;gap:8px;justify-content:flex-end">
         <button class="btn btn-outline" onclick="fecharModalPE()">Cancelar</button>
-        <button class="btn btn-rose" onclick="salvarPE()">Adicionar</button>
+        <button class="btn btn-rose" onclick="salvarListaPE()">Criar lista</button>
       </div>
     </div>`;
   document.body.appendChild(modal);
   modal.addEventListener('click', e => { if(e.target===modal) fecharModalPE(); });
 }
 
-function fecharModalPE() {
-  const m = document.getElementById('modal-pe');
-  if (m) m.remove();
-}
+function fecharModalPE() { const m=document.getElementById('modal-pe'); if(m) m.remove(); }
 
-async function salvarPE() {
-  const modelo = document.getElementById('pe-modelo').value.trim();
+async function salvarListaPE() {
+  const modelo = document.getElementById('pe-novo-modelo').value.trim();
   if (!modelo) { toast('Informe o modelo'); return; }
-  const body = {
-    modelo,
-    colecaoCor: document.getElementById('pe-cor').value.trim(),
-    bordado: document.getElementById('pe-bordado').value.trim(),
-    dataEnvio: document.getElementById('pe-data').value.trim(),
-    obs: document.getElementById('pe-obs').value.trim(),
-  };
+  const dataEnvio = document.getElementById('pe-novo-data').value.trim();
   try {
-    const r = await fetch('/api/pronta-entrega', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-    if (!r.ok) throw new Error('Erro ao salvar');
+    const r = await fetch('/api/listas-pe', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({modelo, dataEnvio})});
+    if (!r.ok) throw new Error('Erro ao criar');
     fecharModalPE();
-    toast('✅ Peça adicionada à pronta entrega');
+    toast('✅ Lista PE criada');
+    PE_ABA = 'listas';
     carregarPE();
+    if (typeof carregarListas === 'function') carregarListas();
   } catch(e) { toast('Erro: '+e.message); }
 }
 
-function abrirVenderPE(id) {
-  const peca = PECAS_PE.find(p => p.id === id);
-  if (!peca) return;
+async function excluirListaPE(id) {
+  if (!confirm('Excluir esta lista PE e todas as suas peças?')) return;
+  try {
+    await fetch('/api/listas-pe/'+id, {method:'DELETE'});
+    toast('Lista PE excluída');
+    carregarPE();
+    if (typeof carregarListas === 'function') carregarListas();
+  } catch(e) { toast('Erro: '+e.message); }
+}
+
+// Adicionar peça a uma lista PE
+function abrirAddPeca(listaId) {
+  const lista = LISTAS_PE.find(l => l.id === listaId);
+  if (!lista) return;
   const modal = document.createElement('div');
   modal.className = 'cal-modal';
-  modal.id = 'modal-vender-pe';
+  modal.id = 'modal-add-peca';
   modal.innerHTML = `
-    <div class="cal-modal-box" style="max-width:420px;width:95vw">
-      <div style="font-family:var(--serif);font-style:italic;font-size:19px;color:var(--rose);margin-bottom:6px">Registrar venda</div>
-      <div style="font-size:13px;color:var(--text2);margin-bottom:14px">${peca.modelo}${peca.colecao_cor?' · '+peca.colecao_cor:''}</div>
-      <div style="margin-bottom:10px">
-        <label style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);display:block;margin-bottom:4px">Número do pedido</label>
-        <input id="vpe-numero" placeholder="Ex: #3700" style="width:100%;font-size:13px;padding:8px 11px;border-radius:7px;border:1px solid var(--border2);background:var(--bg2)">
-      </div>
-      <div style="margin-bottom:16px">
-        <label style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);display:block;margin-bottom:4px">Vendedora</label>
-        <input id="vpe-vendedora" placeholder="Ex: MARI" style="width:100%;font-size:13px;padding:8px 11px;border-radius:7px;border:1px solid var(--border2);background:var(--bg2)">
+    <div class="cal-modal-box" style="max-width:460px;width:95vw">
+      <div style="font-family:var(--serif);font-style:italic;font-size:19px;color:var(--rose);margin-bottom:4px">Adicionar peça</div>
+      <div style="font-size:12px;color:var(--text2);margin-bottom:14px">Lista PE #${lista.numero} · ${lista.modelo}</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+        <div>
+          <label style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);display:block;margin-bottom:4px">Cor / Coleção</label>
+          <input id="ap-cor" placeholder="Ex: Ella Café" style="width:100%;font-size:13px;padding:8px 11px;border-radius:7px;border:1px solid var(--border2);background:var(--bg2)">
+        </div>
+        <div>
+          <label style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);display:block;margin-bottom:4px">Bordado</label>
+          <input id="ap-bordado" placeholder="Opcional" style="width:100%;font-size:13px;padding:8px 11px;border-radius:7px;border:1px solid var(--border2);background:var(--bg2)">
+        </div>
+        <div>
+          <label style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);display:block;margin-bottom:4px">Nº pedido (em branco até vender)</label>
+          <input id="ap-pedido" placeholder="Opcional" style="width:100%;font-size:13px;padding:8px 11px;border-radius:7px;border:1px solid var(--border2);background:var(--bg2)">
+        </div>
+        <div>
+          <label style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);display:block;margin-bottom:4px">Vendedora (em branco até vender)</label>
+          <input id="ap-vendedora" placeholder="Opcional" style="width:100%;font-size:13px;padding:8px 11px;border-radius:7px;border:1px solid var(--border2);background:var(--bg2)">
+        </div>
+        <div style="grid-column:1/3">
+          <label style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);display:block;margin-bottom:4px">Observação</label>
+          <input id="ap-obs" placeholder="Opcional" style="width:100%;font-size:13px;padding:8px 11px;border-radius:7px;border:1px solid var(--border2);background:var(--bg2)">
+        </div>
       </div>
       <div style="display:flex;gap:8px;justify-content:flex-end">
-        <button class="btn btn-outline" onclick="fecharVenderPE()">Cancelar</button>
-        <button class="btn btn-rose" onclick="confirmarVenderPE('${id}')">Confirmar venda</button>
+        <button class="btn btn-outline" onclick="fecharAddPeca()">Fechar</button>
+        <button class="btn btn-rose" onclick="salvarPeca('${listaId}', true)">Adicionar e continuar</button>
+        <button class="btn btn-rose" onclick="salvarPeca('${listaId}', false)">Adicionar</button>
       </div>
     </div>`;
   document.body.appendChild(modal);
-  modal.addEventListener('click', e => { if(e.target===modal) fecharVenderPE(); });
+  modal.addEventListener('click', e => { if(e.target===modal) fecharAddPeca(); });
 }
 
-function fecharVenderPE() {
-  const m = document.getElementById('modal-vender-pe');
-  if (m) m.remove();
-}
+function fecharAddPeca() { const m=document.getElementById('modal-add-peca'); if(m) m.remove(); }
 
-async function confirmarVenderPE(id) {
+async function salvarPeca(listaId, continuar) {
   const body = {
-    numeroPedido: document.getElementById('vpe-numero').value.trim(),
-    vendedora: document.getElementById('vpe-vendedora').value.trim(),
+    colecaoCor: document.getElementById('ap-cor').value.trim(),
+    bordado: document.getElementById('ap-bordado').value.trim(),
+    numeroPedido: document.getElementById('ap-pedido').value.trim(),
+    vendedora: document.getElementById('ap-vendedora').value.trim(),
+    obs: document.getElementById('ap-obs').value.trim(),
   };
   try {
-    const r = await fetch('/api/pronta-entrega/'+id+'/vender', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-    if (!r.ok) throw new Error('Erro ao registrar');
-    fecharVenderPE();
-    toast('✅ Venda registrada');
+    const r = await fetch('/api/listas-pe/'+listaId+'/pecas', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    if (!r.ok) throw new Error('Erro ao adicionar');
+    toast('✅ Peça adicionada');
+    await carregarPE();
+    if (continuar) {
+      // Limpa os campos para adicionar a próxima rapidamente
+      ['ap-cor','ap-bordado','ap-pedido','ap-vendedora','ap-obs'].forEach(id=>{const e=document.getElementById(id); if(e) e.value='';});
+      const c=document.getElementById('ap-cor'); if(c) c.focus();
+    } else {
+      fecharAddPeca();
+    }
+  } catch(e) { toast('Erro: '+e.message); }
+}
+
+// Editar peça
+function abrirEditarPeca(id) {
+  const p = acharPecaPE(id);
+  if (!p) return;
+  const modal = document.createElement('div');
+  modal.className = 'cal-modal';
+  modal.id = 'modal-edit-peca';
+  modal.innerHTML = `
+    <div class="cal-modal-box" style="max-width:460px;width:95vw">
+      <div style="font-family:var(--serif);font-style:italic;font-size:19px;color:var(--rose);margin-bottom:14px">Editar peça</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">
+        <div><label style="font-size:10px;text-transform:uppercase;color:var(--text3);display:block;margin-bottom:4px">Modelo</label>
+          <input id="ep-modelo" value="${(p.modelo||'').replace(/"/g,'&quot;')}" style="width:100%;font-size:13px;padding:8px 11px;border-radius:7px;border:1px solid var(--border2);background:var(--bg2)"></div>
+        <div><label style="font-size:10px;text-transform:uppercase;color:var(--text3);display:block;margin-bottom:4px">Cor / Coleção</label>
+          <input id="ep-cor" value="${(p.colecao_cor||'').replace(/"/g,'&quot;')}" style="width:100%;font-size:13px;padding:8px 11px;border-radius:7px;border:1px solid var(--border2);background:var(--bg2)"></div>
+        <div><label style="font-size:10px;text-transform:uppercase;color:var(--text3);display:block;margin-bottom:4px">Bordado</label>
+          <input id="ep-bordado" value="${(p.bordado||'').replace(/"/g,'&quot;')}" style="width:100%;font-size:13px;padding:8px 11px;border-radius:7px;border:1px solid var(--border2);background:var(--bg2)"></div>
+        <div><label style="font-size:10px;text-transform:uppercase;color:var(--text3);display:block;margin-bottom:4px">Observação</label>
+          <input id="ep-obs" value="${(p.obs||'').replace(/"/g,'&quot;')}" style="width:100%;font-size:13px;padding:8px 11px;border-radius:7px;border:1px solid var(--border2);background:var(--bg2)"></div>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn btn-outline" onclick="fecharEditarPeca()">Cancelar</button>
+        <button class="btn btn-rose" onclick="salvarEditarPeca('${id}')">Salvar</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  modal.addEventListener('click', e => { if(e.target===modal) fecharEditarPeca(); });
+}
+
+function fecharEditarPeca() { const m=document.getElementById('modal-edit-peca'); if(m) m.remove(); }
+
+async function salvarEditarPeca(id) {
+  const p = acharPecaPE(id);
+  if (!p) return;
+  const body = {
+    modelo: document.getElementById('ep-modelo').value.trim(),
+    colecaoCor: document.getElementById('ep-cor').value.trim(),
+    bordado: document.getElementById('ep-bordado').value.trim(),
+    obs: document.getElementById('ep-obs').value.trim(),
+    numeroPedido: p.numero_pedido || '',
+    vendedora: p.vendedora || '',
+  };
+  try {
+    const r = await fetch('/api/pecas-pe/'+id, {method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    if (!r.ok) throw new Error('Erro ao salvar');
+    fecharEditarPeca();
+    toast('✅ Peça atualizada');
     carregarPE();
   } catch(e) { toast('Erro: '+e.message); }
 }
 
-async function excluirPE(id) {
-  if (!confirm('Excluir esta peça de pronta entrega?')) return;
+// Vender peça
+function abrirVenderPeca(id) {
+  const p = acharPecaPE(id);
+  if (!p) return;
+  const modal = document.createElement('div');
+  modal.className = 'cal-modal';
+  modal.id = 'modal-vender-peca';
+  modal.innerHTML = `
+    <div class="cal-modal-box" style="max-width:420px;width:95vw">
+      <div style="font-family:var(--serif);font-style:italic;font-size:19px;color:var(--rose);margin-bottom:6px">Registrar venda</div>
+      <div style="font-size:13px;color:var(--text2);margin-bottom:14px">${p.modelo}${p.colecao_cor?' · '+p.colecao_cor:''}${p.bordado?' · '+p.bordado:''}</div>
+      <div style="margin-bottom:10px">
+        <label style="font-size:10px;text-transform:uppercase;color:var(--text3);display:block;margin-bottom:4px">Número do pedido</label>
+        <input id="vp-numero" value="${(p.numero_pedido||'').replace(/"/g,'&quot;')}" placeholder="Ex: #3700" style="width:100%;font-size:13px;padding:8px 11px;border-radius:7px;border:1px solid var(--border2);background:var(--bg2)">
+      </div>
+      <div style="margin-bottom:16px">
+        <label style="font-size:10px;text-transform:uppercase;color:var(--text3);display:block;margin-bottom:4px">Vendedora</label>
+        <input id="vp-vendedora" value="${(p.vendedora||'').replace(/"/g,'&quot;')}" placeholder="Ex: MARI" style="width:100%;font-size:13px;padding:8px 11px;border-radius:7px;border:1px solid var(--border2);background:var(--bg2)">
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn btn-outline" onclick="fecharVenderPeca()">Cancelar</button>
+        <button class="btn btn-rose" onclick="confirmarVenderPeca('${id}')">Confirmar venda</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  modal.addEventListener('click', e => { if(e.target===modal) fecharVenderPeca(); });
+}
+
+function fecharVenderPeca() { const m=document.getElementById('modal-vender-peca'); if(m) m.remove(); }
+
+async function confirmarVenderPeca(id) {
+  const body = {
+    numeroPedido: document.getElementById('vp-numero').value.trim(),
+    vendedora: document.getElementById('vp-vendedora').value.trim(),
+  };
   try {
-    await fetch('/api/pronta-entrega/'+id, {method:'DELETE'});
+    const r = await fetch('/api/pecas-pe/'+id+'/vender', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    if (!r.ok) throw new Error('Erro ao registrar');
+    fecharVenderPeca();
+    toast('✅ Venda registrada — peça saiu do estoque');
+    carregarPE();
+  } catch(e) { toast('Erro: '+e.message); }
+}
+
+async function devolverPeca(id) {
+  if (!confirm('Devolver esta peça ao estoque disponível?')) return;
+  try {
+    await fetch('/api/pecas-pe/'+id+'/devolver', {method:'POST'});
+    toast('Peça devolvida ao estoque');
+    carregarPE();
+  } catch(e) { toast('Erro: '+e.message); }
+}
+
+async function excluirPeca(id) {
+  if (!confirm('Excluir esta peça?')) return;
+  try {
+    await fetch('/api/pecas-pe/'+id, {method:'DELETE'});
     toast('Peça excluída');
     carregarPE();
   } catch(e) { toast('Erro: '+e.message); }
 }
+
 
 async function imprimirLista(id) {
   const l = LISTAS.find(x => x.id === id);
