@@ -1309,11 +1309,20 @@ function renderAlteracoes(hist) {
     const quando = new Date(h.alterado_em).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'});
     const de = h.valor_anterior || '(vazio)';
     const para = h.valor_novo || '(vazio)';
+    const numero = h.order_numero || '#—';
+    // Modelo/cor atual do pedido
+    const modeloCor = [h.modelo_atual, h.cor_atual].filter(Boolean).join(' · ');
+    // Alerta se o pedido já está em alguma lista de produção
+    const emListas = Array.isArray(h.em_listas) ? h.em_listas : [];
+    const alertaLista = emListas.length
+      ? `<div style="margin-top:8px;background:#fff3cd;border:1px solid #ffc107;border-radius:6px;padding:6px 10px;font-size:11px;color:#856404">⚠️ Este pedido já está ${emListas.length>1?'nas listas':'na lista'} <strong>${emListas.map(n=>'#'+n).join(', ')}</strong> — verifique se a produção precisa ser avisada</div>`
+      : '';
     return `
-      <div style="background:var(--bg2);border:1px solid var(--border);border-radius:9px;padding:12px 16px;margin-bottom:8px">
+      <div style="background:var(--bg2);border:1px solid ${emListas.length?'#ffc107':'var(--border)'};border-radius:9px;padding:12px 16px;margin-bottom:8px">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">
           <div>
-            <span class="num" style="font-size:14px">${h.order_numero||'#'}</span>
+            <span class="num" style="font-size:14px">${numero}</span>
+            ${modeloCor?`<span style="font-size:12px;color:var(--text2);margin-left:8px">${modeloCor}</span>`:''}
             <span style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-left:8px">${campo}</span>
           </div>
           <div style="font-size:11px;color:var(--text3)">${quando}</div>
@@ -1324,6 +1333,7 @@ function renderAlteracoes(hist) {
           <span style="color:#1e6640;font-weight:500">${para}</span>
         </div>
         <div style="font-size:11px;color:var(--text3);margin-top:4px">Por <strong>${h.alterado_por||'—'}</strong></div>
+        ${alertaLista}
       </div>`;
   }).join('');
 }
@@ -2676,7 +2686,7 @@ async function salvarEdicao(orderId, numero) {
   try {
     const r = await fetch('/api/pedido/'+orderId+'/editar', {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ alteradoPor: EDITOR_NOME, campos })
+      body: JSON.stringify({ alteradoPor: EDITOR_NOME, numero: numero, campos })
     });
     if (!r.ok) throw new Error('Erro ao salvar');
 
