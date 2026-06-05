@@ -1347,10 +1347,17 @@ function renderMinhasListas() {
                 <div>📦 <strong>${pecas.length}</strong> peças · ${disp} disponíveis · ${vend} vendidas</div>
                 ${l.data_envio?`<div>📅 Envio: <strong>${l.data_envio}</strong></div>`:''}
                 <div>🗓️ Criada: ${new Date(l.criada_em).toLocaleDateString('pt-BR',{day:'2-digit',month:'2-digit',year:'numeric'})}</div>
+                ${l.data_producao?`<div>🏭 Produção: <strong style="color:#1e6640">${l.data_producao}</strong></div>`:'<div style="color:#8a6400">🏭 Sem data de produção</div>'}
               </div>
               <div style="display:flex;gap:6px;margin-top:12px;flex-wrap:wrap">
-                <button class="btn btn-rose btn-sm" onclick="showSec('pronta-entrega',document.querySelector('.nav-btn[onclick*=pronta-entrega]'));PE_ABA='listas';setTimeout(renderPE,50)">Abrir na aba PE</button>
+                <button class="btn btn-rose btn-sm" onclick="abrirListaPE('${l.id}')">Abrir lista</button>
+                <button class="btn btn-gold btn-sm" onclick="imprimirListaPE('${l.id}')">Imprimir</button>
+                <button class="btn btn-outline btn-sm" onclick="baixarPDFdaListaPE('${l.id}')">PDF</button>
                 <div style="flex:1"></div>
+                ${!l.data_producao?`
+                  <input type="date" style="font-size:10px;padding:3px 6px;border-radius:5px;border:1px solid var(--border2);background:var(--bg2)"
+                    onchange="definirDataProdPE('${l.id}',this.value)" title="Definir data de produção">
+                `:`<button class="btn btn-outline btn-sm" onclick="editarDataListaPE('${l.id}')" style="font-size:10px">Alterar data</button>`}
                 <button class="btn btn-outline btn-sm" style="color:#c0392b;border-color:#f5c6c2" onclick="excluirListaPE('${l.id}')">Excluir</button>
               </div>
             </div>`;
@@ -1479,9 +1486,10 @@ function renderPE() {
   const el = document.getElementById('pe-cont');
   if (!el) return;
   const abas = `
-    <div style="display:flex;gap:8px;margin-bottom:16px">
+    <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
       <button class="btn ${PE_ABA==='estoque'?'btn-rose':'btn-outline'} btn-sm" onclick="trocarAbaPE('estoque')">📦 Estoque disponível</button>
       <button class="btn ${PE_ABA==='listas'?'btn-rose':'btn-outline'} btn-sm" onclick="trocarAbaPE('listas')">📋 Listas de produção PE</button>
+      <button class="btn ${PE_ABA==='vendas'?'btn-rose':'btn-outline'} btn-sm" onclick="trocarAbaPE('vendas')">💰 Vendas</button>
     </div>`;
   if (PE_ABA === 'estoque') {
     el.innerHTML = abas + `
@@ -1491,12 +1499,53 @@ function renderPE() {
       </div>
       <div id="pe-estoque-cont"></div>`;
     renderEstoquePE();
+  } else if (PE_ABA === 'vendas') {
+    el.innerHTML = abas + renderVendasPE();
   } else {
     el.innerHTML = abas + renderListasPE();
   }
 }
 
 function trocarAbaPE(aba) { PE_ABA = aba; renderPE(); }
+
+// Resumo de vendas da pronta entrega
+function renderVendasPE() {
+  let vendidas = [];
+  (LISTAS_PE||[]).forEach(l => (l.pecas||[]).forEach(p => { if(p.vendida) vendidas.push({...p, listaNumero:l.numero}); }));
+  if (!vendidas.length) return '<div style="font-size:13px;color:var(--text3);padding:14px">Nenhuma venda de pronta entrega registrada ainda.</div>';
+
+  const porModelo = {};
+  const porVendedora = {};
+  vendidas.forEach(p => {
+    porModelo[p.modelo] = (porModelo[p.modelo]||0)+1;
+    const v = (p.vendedora||'—').trim()||'—';
+    porVendedora[v] = (porVendedora[v]||0)+1;
+  });
+
+  const box = (titulo, obj) => `
+    <div style="background:var(--bg2);border:1px solid var(--border);border-radius:9px;padding:14px 18px;flex:1;min-width:220px">
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:10px">${titulo}</div>
+      ${Object.entries(obj).sort((a,b)=>b[1]-a[1]).map(([k,n])=>`
+        <div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;border-bottom:1px solid var(--border)">
+          <span>${k}</span><strong style="color:#1e6640">${n}</strong>
+        </div>`).join('')}
+    </div>`;
+
+  return `
+    <div style="font-size:14px;margin-bottom:14px">Total vendido: <strong style="color:#1e6640">${vendidas.length} peça${vendidas.length>1?'s':''}</strong></div>
+    <div style="display:flex;gap:12px;flex-wrap:wrap;margin-bottom:18px">
+      ${box('Por modelo', porModelo)}
+      ${box('Por vendedora', porVendedora)}
+    </div>
+    <div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:8px">Peças vendidas</div>
+    <div style="display:flex;flex-direction:column;gap:5px">
+      ${vendidas.map(p=>`
+        <div style="display:flex;justify-content:space-between;align-items:center;background:var(--bg2);border-radius:6px;padding:7px 12px;font-size:12px">
+          <span><strong>${p.modelo}</strong>${p.colecao_cor?' · '+p.colecao_cor:''}${p.bordado?' · '+p.bordado:''}</span>
+          <span style="color:var(--text3)">${p.numero_pedido||''} ${p.vendedora||''} ${p.vendida_em?'· '+new Date(p.vendida_em).toLocaleDateString('pt-BR'):''}</span>
+        </div>`).join('')}
+    </div>`;
+}
 
 // Catálogo de estoque: todas as peças não vendidas de todas as listas PE
 function renderEstoquePE() {
@@ -1519,8 +1568,17 @@ function renderEstoquePE() {
   // Agrupa por modelo
   const porModelo = {};
   disponiveis.forEach(p => { (porModelo[p.modelo] = porModelo[p.modelo]||[]).push(p); });
+
+  // Contador geral por modelo (sobre TODO o estoque, não o filtrado) — panorama rápido
+  const totalPorModelo = {};
+  LISTAS_PE.forEach(l => (l.pecas||[]).forEach(p => { if(!p.vendida) totalPorModelo[p.modelo]=(totalPorModelo[p.modelo]||0)+1; }));
+  const chips = Object.entries(totalPorModelo).sort((a,b)=>b[1]-a[1]).map(([m,n]) =>
+    `<span onclick="document.getElementById('pe-busca').value='${m.replace(/'/g,"")}';renderEstoquePE()" style="cursor:pointer;font-size:11px;background:#edf7f1;color:#1e6640;border:1px solid #a8d8b8;padding:3px 9px;border-radius:12px">${m}: <strong>${n}</strong></span>`
+  ).join('');
+
   cont.innerHTML = `
-    <div style="font-size:12px;color:var(--text2);margin-bottom:10px">${disponiveis.length} peça${disponiveis.length>1?'s':''} disponíve${disponiveis.length>1?'is':'l'} em estoque</div>
+    ${chips?`<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid var(--border)">${chips}</div>`:''}
+    <div style="font-size:12px;color:var(--text2);margin-bottom:10px">${disponiveis.length} peça${disponiveis.length>1?'s':''} disponíve${disponiveis.length>1?'is':'l'}${busca?' para "'+busca+'"':' em estoque'}</div>
     ${Object.entries(porModelo).map(([modelo, pecas]) => `
       <div style="margin-bottom:16px">
         <div style="font-weight:600;font-size:14px;color:var(--rose);margin-bottom:8px">${modelo} <span style="color:var(--text3);font-weight:400">· ${pecas.length}</span></div>
@@ -1569,6 +1627,7 @@ function renderListasPE() {
                 ${p.vendida
                   ? `<button class="btn btn-outline btn-sm" onclick="devolverPeca('${p.id}')">Devolver ao estoque</button>`
                   : `<button class="btn btn-rose btn-sm" onclick="abrirVenderPeca('${p.id}')">Vender</button>
+                     <button class="btn btn-outline btn-sm" onclick="duplicarPeca('${p.id}')" title="Criar cópias desta peça">⧉</button>
                      <button class="btn btn-outline btn-sm" onclick="abrirEditarPeca('${p.id}')">✏️</button>
                      <button class="btn btn-outline btn-sm" onclick="excluirPeca('${p.id}')">×</button>`}
               </div>
@@ -1821,6 +1880,120 @@ async function excluirPeca(id) {
   } catch(e) { toast('Erro: '+e.message); }
 }
 
+// Duplicar uma peça N vezes (para lotes do mesmo modelo/cor)
+async function duplicarPeca(id) {
+  const p = acharPecaPE(id);
+  if (!p) return;
+  const qtd = parseInt(prompt('Quantas cópias adicionais criar?', '4'));
+  if (!qtd || qtd < 1) return;
+  const lista = LISTAS_PE.find(l => (l.pecas||[]).some(x=>x.id===id));
+  if (!lista) return;
+  const body = { modelo:p.modelo, colecaoCor:p.colecao_cor, bordado:p.bordado, obs:p.obs, numeroPedido:'', vendedora:'' };
+  try {
+    for (let k=0;k<qtd;k++) {
+      await fetch('/api/listas-pe/'+lista.id+'/pecas', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    }
+    toast('✅ '+qtd+' cópias adicionadas');
+    carregarPE();
+  } catch(e) { toast('Erro: '+e.message); }
+}
+
+// Helper: acha uma lista PE pelo id
+function acharListaPE(id) { return (LISTAS_PE||[]).find(l => l.id === id) || null; }
+
+// Imprimir lista PE (janela limpa, igual às listas normais mas com as peças PE)
+function imprimirListaPE(id) {
+  const l = acharListaPE(id);
+  if (!l) return;
+  const pecas = l.pecas || [];
+  if (!pecas.length) { toast('Lista PE sem peças para imprimir'); return; }
+  const comBord = pecas.filter(p => p.bordado).length;
+  const dataCriada = l.criada_em ? new Date(l.criada_em).toLocaleDateString('pt-BR') : new Date().toLocaleDateString('pt-BR');
+
+  const linhas = pecas.map(p => `
+    <tr${p.vendida?' style="opacity:.55"':''}>
+      <td>${p.colecao_cor||''}</td>
+      <td>${p.bordado||'Sem bordado'}</td>
+      <td>${p.obs||''}</td>
+      <td>${p.vendida?('Vendida '+(p.numero_pedido||'')+' '+(p.vendedora||'')):'—'}</td>
+    </tr>`).join('');
+
+  const win = window.open('', '_blank');
+  if (!win) { toast('Permita pop-ups para imprimir'); return; }
+  win.document.write(`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8">
+    <title>Lista PE #${l.numero} — Vilma Mirian</title>
+    <style>
+      @page{size:A4 portrait;margin:12mm}
+      *{box-sizing:border-box;margin:0;padding:0}
+      html,body{margin:0!important;padding:0!important}
+      body{font-family:-apple-system,Helvetica,Arial,sans-serif;color:#2a2526;font-size:12px}
+      .cab{border-bottom:2px solid #1e6640;padding-bottom:8px;margin-bottom:14px}
+      .cab-tit{font-family:Georgia,"Times New Roman",serif;font-style:italic;font-size:22px;color:#1e6640}
+      .cab-sub{font-size:12px;color:#5a5052;margin-top:3px}
+      .grupo-hd{font-weight:600;font-size:14px;color:#1e6640;margin-bottom:6px}
+      table{width:100%;border-collapse:collapse}
+      thead{display:table-header-group}
+      tr{page-break-inside:avoid}
+      th{text-align:left;font-size:9px;text-transform:uppercase;letter-spacing:.04em;color:#777;border-bottom:1px solid #ccc;padding:4px 6px}
+      td{font-size:11px;padding:5px 6px;border-bottom:1px solid #eee}
+    </style></head>
+    <body>
+      <div class="cab">
+        <div class="cab-tit">Vilma Mirian — Pronta Entrega</div>
+        <div class="cab-sub">Lista PE #${l.numero} · ${l.modelo} · ${pecas.length} peças · ${comBord} com bordado${l.data_envio?' · Envio '+l.data_envio:''}${l.data_producao?' · Produção: '+l.data_producao:''} · ${dataCriada}</div>
+      </div>
+      <div class="grupo-hd">${l.modelo} — ${pecas.length} peça${pecas.length>1?'s':''}</div>
+      <table>
+        <thead><tr><th>Cor / Coleção</th><th>Bordado</th><th>Observação</th><th>Situação</th></tr></thead>
+        <tbody>${linhas}</tbody>
+      </table>
+      <script>window.onload=function(){setTimeout(function(){window.print();},200);};<\/script>
+    </body></html>`);
+  win.document.close();
+  win.focus();
+}
+
+function baixarPDFdaListaPE(id) {
+  toast('💡 Na janela que abrir, escolha "Salvar como PDF" no campo Destino');
+  imprimirListaPE(id);
+}
+
+// Abrir lista PE — leva à aba Pronta Entrega, visão de listas, e abre o detalhe
+function abrirListaPE(id) {
+  showSec('pronta-entrega', document.querySelector('.nav-btn[onclick*=pronta-entrega]'));
+  PE_ABA = 'listas';
+  setTimeout(renderPE, 60);
+}
+
+// Definir data de produção da lista PE
+async function definirDataProdPE(id, val) {
+  if (!val) return;
+  const p = val.split('-');
+  const dataFmt = p[2]+'/'+p[1]+'/'+p[0];
+  try {
+    await fetch('/api/listas-pe/'+id, {method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({dataProducao:dataFmt})});
+    const idx = LISTAS_PE.findIndex(l=>l.id===id);
+    if (idx>-1) LISTAS_PE[idx].data_producao = dataFmt;
+    renderMinhasListas();
+    if (typeof renderCal === 'function') renderCal();
+    toast('✅ Data de produção: '+dataFmt);
+  } catch(e) { toast('Erro: '+e.message); }
+}
+
+async function editarDataListaPE(id) {
+  const l = acharListaPE(id);
+  if (!l) return;
+  const nova = prompt('Nova data de produção (DD/MM/AAAA):', l.data_producao||'');
+  if (!nova) return;
+  try {
+    await fetch('/api/listas-pe/'+id, {method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({dataProducao:nova})});
+    const idx = LISTAS_PE.findIndex(x=>x.id===id);
+    if (idx>-1) LISTAS_PE[idx].data_producao = nova;
+    renderMinhasListas();
+    if (typeof renderCal === 'function') renderCal();
+    toast('✅ Data atualizada');
+  } catch(e) { toast('Erro: '+e.message); }
+}
 
 async function imprimirLista(id) {
   const l = LISTAS.find(x => x.id === id);
@@ -2442,6 +2615,20 @@ function renderCal() {
         <span style="opacity:.6;font-size:9px">${l.totalPecas}pç</span>
       </div>`;
     });
+    // Listas PE no dia
+    const listasPeNoDia = (LISTAS_PE||[]).filter(l=>{
+      if(!l.data_producao) return false;
+      const p=l.data_producao.split('/');
+      return p[0]===String(dia).padStart(2,'0')&&p[1]===String(CAL_MES+1).padStart(2,'0');
+    });
+    listasPeNoDia.forEach(l=>{
+      const np=(l.pecas||[]).length;
+      evs+=`<div class="cal-lista-chip" style="background:#edf7f1;border-color:#a8d8b8;color:#1e6640"
+        onclick="abrirModalListaPE('${l.id}',event)">
+        <span title="Lista PE #${l.numero} ${l.modelo}">PE #${l.numero} ${(l.modelo||'').substring(0,16)}</span>
+        <span style="opacity:.6;font-size:9px">${np}pç</span>
+      </div>`;
+    });
     const cls=['cal-day',isHoje?'today':'',isWE?'weekend':''].filter(Boolean).join(' ');
     html+=`<div class="${cls}"
       ondragover="onDragOver(event)"
@@ -2529,6 +2716,67 @@ function fecharModal() {
   });
 }
 
+// Modal de lista PE a partir do calendário
+function abrirModalListaPE(id, e) {
+  if (e) e.stopPropagation();
+  const l = acharListaPE(id);
+  if (!l) return;
+  const pecas = l.pecas || [];
+  const disp = pecas.filter(p=>!p.vendida).length;
+  const vend = pecas.filter(p=>p.vendida).length;
+  const modal = document.createElement('div');
+  modal.className = 'cal-modal';
+  modal.id = 'cal-modal';
+  modal.innerHTML = `
+    <div class="cal-modal-box">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px">
+        <div>
+          <div style="font-family:var(--serif);font-style:italic;font-size:20px;color:#1e6640">PE #${l.numero}</div>
+          <div style="font-size:13px;font-weight:500;margin-top:2px">${l.modelo}</div>
+        </div>
+        <button onclick="fecharModal()" style="border:none;background:transparent;font-size:20px;cursor:pointer;color:var(--text3)">×</button>
+      </div>
+      <div style="font-size:12px;color:var(--text3);display:flex;flex-direction:column;gap:6px;margin-bottom:16px">
+        <div>📦 <strong>${pecas.length} peças</strong> · ${disp} disponíveis · ${vend} vendidas</div>
+        ${l.data_envio?`<div>📅 Envio: <strong>${l.data_envio}</strong></div>`:''}
+        <div>🗓️ Criada: ${new Date(l.criada_em).toLocaleDateString('pt-BR')}</div>
+        <div style="display:flex;align-items:center;gap:8px">
+          🏭 Data de produção:
+          <input type="date" value="${l.data_producao?l.data_producao.split('/').reverse().join('-'):''}"
+            style="font-size:11px;padding:3px 6px;border-radius:5px;border:1px solid var(--border2)"
+            onchange="atualizarDataModalListaPE('${l.id}',this.value)">
+        </div>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-rose" onclick="fecharModal();abrirListaPE('${l.id}')">Abrir na aba PE</button>
+        <button class="btn btn-gold" onclick="imprimirListaPE('${l.id}')">Imprimir</button>
+        <button class="btn btn-outline" style="color:#c0392b;border-color:#f5c6c2" onclick="excluirListaPEModal('${l.id}')">Excluir</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  modal.addEventListener('click', ev => { if(ev.target===modal) fecharModal(); });
+}
+
+async function atualizarDataModalListaPE(id, val) {
+  if (!val) return;
+  const p = val.split('-');
+  const dataFmt = p[2]+'/'+p[1]+'/'+p[0];
+  await fetch('/api/listas-pe/'+id,{method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify({dataProducao:dataFmt})});
+  const idx=LISTAS_PE.findIndex(l=>l.id===id);
+  if(idx>-1) LISTAS_PE[idx].data_producao=dataFmt;
+  fecharModal();
+  renderCal();
+  renderMinhasListas();
+  toast('✅ Data atualizada: '+dataFmt);
+}
+
+async function excluirListaPEModal(id) {
+  if (!confirm('Excluir esta lista PE e todas as suas peças?')) return;
+  await fetch('/api/listas-pe/'+id,{method:'DELETE'});
+  LISTAS_PE = LISTAS_PE.filter(l=>l.id!==id);
+  fecharModal(); renderCal(); renderMinhasListas(); toast('Lista PE excluída');
+}
+
 async function atualizarDataModalLista(id, val) {
   if (!val) return;
   const p = val.split('-');
@@ -2598,9 +2846,10 @@ function verEnviosDia(data, e) {
 
 function renderListaSemData() {
   const semData=LISTAS.filter(l=>!l.dataProducao);
+  const semDataPE=(LISTAS_PE||[]).filter(l=>!l.data_producao);
   const el=document.getElementById('listas-sem-data');
   if(!el) return;
-  if(!semData.length){el.innerHTML='<div style="font-size:12px;color:var(--text3);padding:12px 0">Todas as listas já têm data de produção</div>';return;}
+  if(!semData.length && !semDataPE.length){el.innerHTML='<div style="font-size:12px;color:var(--text3);padding:12px 0">Todas as listas já têm data de produção</div>';return;}
   el.innerHTML=semData.map(l=>`
     <div class="lista-salva-card" style="margin-bottom:8px">
       <div>
@@ -2616,6 +2865,23 @@ function renderListaSemData() {
       <div style="display:flex;flex-direction:column;gap:5px">
         <button class="btn btn-sm btn-outline" onclick="verLista('${l.id}')">Ver</button>
         <button class="btn btn-sm btn-outline" style="color:#c0392b;border-color:#f5c6c2" onclick="excluirLista('${l.id}')">Excluir</button>
+      </div>
+    </div>`).join('')
+    + semDataPE.map(l=>`
+    <div class="lista-salva-card" style="margin-bottom:8px;background:#f3faf5;border-color:#a8d8b8">
+      <div>
+        <div class="ls-num" style="color:#1e6640">PE #${l.numero}</div>
+        <div class="ls-nome">${l.modelo} <span style="font-size:10px;background:#edf7f1;color:#1e6640;padding:1px 6px;border-radius:4px;margin-left:4px">Pronta entrega</span></div>
+        <div class="ls-meta">${(l.pecas||[]).length} peças · criada ${new Date(l.criada_em).toLocaleDateString('pt-BR')}</div>
+        ${l.data_envio?`<div style="font-size:11px;color:var(--text3);margin-top:2px">Envio: ${l.data_envio}</div>`:''}
+        <div class="ls-data-prod">
+          <span style="font-size:11px;color:var(--text3)">Data de produção:</span>
+          <input type="date" class="ls-data-input" onchange="definirDataProdPE('${l.id}',this.value)" placeholder="Selecione">
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:5px">
+        <button class="btn btn-sm btn-outline" onclick="abrirListaPE('${l.id}')">Ver</button>
+        <button class="btn btn-sm btn-outline" style="color:#c0392b;border-color:#f5c6c2" onclick="excluirListaPEModal('${l.id}')">Excluir</button>
       </div>
     </div>`).join('');
 }
