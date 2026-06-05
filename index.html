@@ -527,9 +527,12 @@ input[type=checkbox]{accent-color:var(--rose);cursor:pointer}
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px">
         <div>
           <div style="font-family:var(--serif);font-style:italic;font-size:20px;color:var(--rose)">Ficha de Corte</div>
-          <div style="font-size:12px;color:var(--text3);margin-top:2px">Por cor e coleção — para programar o corte do tecido</div>
+          <div style="font-size:12px;color:var(--text3);margin-top:2px" id="ficha-subtitulo">Por cor e coleção — para programar o corte do tecido</div>
         </div>
-        <button class="btn btn-gold" onclick="window.print()">Imprimir</button>
+        <div style="display:flex;gap:8px;align-items:center">
+          <button class="btn btn-outline" id="btn-ficha-visao" onclick="alternarVisaoFicha()">Ver por modelo</button>
+          <button class="btn btn-gold" onclick="window.print()">Imprimir</button>
+        </div>
       </div>
       <div id="sim-box"></div>
       <div id="ficha-cont"><div style="text-align:center;padding:60px 20px;color:var(--text3)">
@@ -2316,8 +2319,14 @@ async function carregarFicha() {
   // Filtrar localmente usando PEDIDOS já carregados
   let peds = [...PEDIDOS];
 
-  // Filtro por lote
-  if (FICHA_LOTE) peds = peds.filter(p => p.dataEnvio === FICHA_LOTE);
+  // Filtro por lote (normaliza para dia/mês, ignorando o ano)
+  if (FICHA_LOTE) {
+    const loteNorm = FICHA_LOTE.split('/').slice(0,2).join('/');
+    peds = peds.filter(p => {
+      if (!p.dataEnvio || p.dataEnvio === '—') return false;
+      return p.dataEnvio.split('/').slice(0,2).join('/') === loteNorm;
+    });
+  }
 
   // Filtro por modelos
   if (FICHA_MODELOS.length) peds = peds.filter(p => FICHA_MODELOS.some(m => (p.modeloBase||'').toLowerCase().includes(m.toLowerCase())));
@@ -2355,15 +2364,27 @@ async function carregarFicha() {
   })() : '';
   document.getElementById('sim-box').innerHTML = simHtml;
 
-  // Agrupar por cor/coleção
+  // Agrupa conforme a visão escolhida
   const ficha = {};
-  peds.forEach(p => {
-    const cor = p.colecaoCor || 'Sem cor';
-    if (!ficha[cor]) ficha[cor] = {};
-    ficha[cor][p.modeloBase] = (ficha[cor][p.modeloBase]||0) + (p.quantidade||1);
-  });
+  if (FICHA_VISAO === 'modelo') {
+    // Por modelo: cada card é um modelo, dentro as cores
+    peds.forEach(p => {
+      const modelo = p.modeloBase || 'Sem modelo';
+      const cor = p.colecaoCor || 'Sem cor';
+      if (!ficha[modelo]) ficha[modelo] = {};
+      ficha[modelo][cor] = (ficha[modelo][cor]||0) + (p.quantidade||1);
+    });
+  } else {
+    // Por cor/coleção: cada card é uma cor, dentro os modelos
+    peds.forEach(p => {
+      const cor = p.colecaoCor || 'Sem cor';
+      const modelo = p.modeloBase || 'Sem modelo';
+      if (!ficha[cor]) ficha[cor] = {};
+      ficha[cor][modelo] = (ficha[cor][modelo]||0) + (p.quantidade||1);
+    });
+  }
   const grupos = Object.entries(ficha)
-    .map(([cor,mods]) => ({cor, modelos:Object.entries(mods).map(([modelo,qtd])=>({modelo,qtd})).sort((a,b)=>b.qtd-a.qtd), total:Object.values(mods).reduce((s,v)=>s+v,0)}))
+    .map(([titulo,sub]) => ({titulo, itens:Object.entries(sub).map(([nome,qtd])=>({nome,qtd})).sort((a,b)=>b.qtd-a.qtd), total:Object.values(sub).reduce((s,v)=>s+v,0)}))
     .sort((a,b)=>b.total-a.total);
 
   const tot = grupos.reduce((s,g)=>s+g.total,0);
@@ -2377,8 +2398,8 @@ async function carregarFicha() {
   </div><div class="ficha-grid">`;
 
   for(const g of grupos){
-    html+=`<div class="ficha-card"><div class="ficha-hd"><span>${g.cor}</span><span>${g.total} pç</span></div>`;
-    for(const i of g.modelos) html+=`<div class="ficha-item"><span>${i.modelo}</span><span class="ficha-qtd">${i.qtd}</span></div>`;
+    html+=`<div class="ficha-card"><div class="ficha-hd"><span>${g.titulo}</span><span>${g.total} pç</span></div>`;
+    for(const i of g.itens) html+=`<div class="ficha-item"><span>${i.nome}</span><span class="ficha-qtd">${i.qtd}</span></div>`;
     html+='</div>';
   }
   html+='</div>';
@@ -2389,6 +2410,21 @@ async function carregarFicha() {
 let FICHA_LOTE = null;
 let FICHA_MODELOS = [];
 let FICHA_TIPO = 'todos';
+let FICHA_VISAO = 'cor'; // 'cor' ou 'modelo'
+
+function alternarVisaoFicha() {
+  FICHA_VISAO = (FICHA_VISAO === 'cor') ? 'modelo' : 'cor';
+  const btn = document.getElementById('btn-ficha-visao');
+  const sub = document.getElementById('ficha-subtitulo');
+  if (FICHA_VISAO === 'modelo') {
+    if (btn) btn.textContent = 'Ver por cor';
+    if (sub) sub.textContent = 'Por modelo — quantas peças de cada modelo e suas cores';
+  } else {
+    if (btn) btn.textContent = 'Ver por modelo';
+    if (sub) sub.textContent = 'Por cor e coleção — para programar o corte do tecido';
+  }
+  carregarFicha();
+}
 
 function filtrarFichaSugestoes(val) {
   const box = document.getElementById('ficha-lote-sugestoes');
