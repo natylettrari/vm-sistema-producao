@@ -35,6 +35,7 @@ async function initDB() {
     id SERIAL PRIMARY KEY,
     order_id TEXT NOT NULL,
     order_numero TEXT,
+    item_id TEXT,
     campo TEXT NOT NULL,
     valor_anterior TEXT,
     valor_novo TEXT,
@@ -79,6 +80,10 @@ async function initDB() {
       atualizado_em TIMESTAMP DEFAULT NOW()
     );
   `);
+  // Garante a coluna item_id no histórico (para bancos que já existiam antes)
+  try {
+    await pool.query(`ALTER TABLE historico_pedidos ADD COLUMN IF NOT EXISTS item_id TEXT`);
+  } catch(e) { console.error('ALTER historico_pedidos:', e.message); }
   console.log('DB inicializado');
 }
 
@@ -844,18 +849,31 @@ app.get('/api/historico-geral', async (req,res) => {
     const pedidosAtuais = CACHE_PEDIDOS || [];
 
     const historico = r.rows.map(h => {
-      // Dados atuais do pedido (pega o primeiro item daquele order_id)
-      const pedidoAtual = pedidosAtuais.find(p => String(p.orderId) === String(h.order_id));
-      // Listas que contêm qualquer item deste pedido
-      const itensDoPedido = pedidosAtuais.filter(p => String(p.orderId) === String(h.order_id)).map(p => String(p.itemId));
-      const listasDoPedido = listas
-        .filter(l => Array.isArray(l.pedidoIds) && l.pedidoIds.some(id => itensDoPedido.includes(String(id))))
-        .map(l => l.numero);
+      // Busca o ITEM exato (se o histórico tem item_id); senão, cai no primeiro item do pedido
+      let pedidoAtual = null;
+      if (h.item_id) {
+        pedidoAtual = pedidosAtuais.find(p => String(p.itemId) === String(h.item_id));
+      }
+      if (!pedidoAtual) {
+        pedidoAtual = pedidosAtuais.find(p => String(p.orderId) === String(h.order_id));
+      }
+      // Listas que contêm este item (ou qualquer item do pedido, se não houver item_id)
+      let listasDoItem;
+      if (h.item_id) {
+        listasDoItem = listas
+          .filter(l => Array.isArray(l.pedidoIds) && l.pedidoIds.some(id => String(id) === String(h.item_id)))
+          .map(l => l.numero);
+      } else {
+        const itensDoPedido = pedidosAtuais.filter(p => String(p.orderId) === String(h.order_id)).map(p => String(p.itemId));
+        listasDoItem = listas
+          .filter(l => Array.isArray(l.pedidoIds) && l.pedidoIds.some(id => itensDoPedido.includes(String(id))))
+          .map(l => l.numero);
+      }
       return {
         ...h,
         modelo_atual: pedidoAtual ? pedidoAtual.modeloBase : null,
         cor_atual: pedidoAtual ? pedidoAtual.colecaoCor : null,
-        em_listas: [...new Set(listasDoPedido)],
+        em_listas: [...new Set(listasDoItem)],
       };
     });
 
@@ -880,23 +898,23 @@ app.post('/api/pedido/:id/editar', async (req,res) => {
     const updates = {};
 
     if (campos.modelo !== undefined) {
-      historicoItens.push([id, numPedido, 'modelo', dadosAtuais.modelo_override||null, campos.modelo, alteradoPor]);
+      historicoItens.push([id, numPedido, 'modelo', dadosAtuais.modelo_override||null, campos.modelo, alteradoPor, chaveItem]);
       updates.modelo_override = campos.modelo;
     }
     if (campos.colecaoCor !== undefined) {
-      historicoItens.push([id, numPedido, 'colecao_cor', dadosAtuais.colecao_cor_override||null, campos.colecaoCor, alteradoPor]);
+      historicoItens.push([id, numPedido, 'colecao_cor', dadosAtuais.colecao_cor_override||null, campos.colecaoCor, alteradoPor, chaveItem]);
       updates.colecao_cor_override = campos.colecaoCor;
     }
     if (campos.bordado !== undefined) {
-      historicoItens.push([id, numPedido, 'bordado', dadosAtuais.bordado_override||null, campos.bordado, alteradoPor]);
+      historicoItens.push([id, numPedido, 'bordado', dadosAtuais.bordado_override||null, campos.bordado, alteradoPor, chaveItem]);
       updates.bordado_override = campos.bordado;
     }
     if (campos.dataEnvio !== undefined) {
-      historicoItens.push([id, numPedido, 'data_envio', dadosAtuais.data_envio_override||null, campos.dataEnvio, alteradoPor]);
+      historicoItens.push([id, numPedido, 'data_envio', dadosAtuais.data_envio_override||null, campos.dataEnvio, alteradoPor, chaveItem]);
       updates.data_envio_override = campos.dataEnvio;
     }
     if (campos.vendedora !== undefined) {
-      historicoItens.push([id, numPedido, 'vendedora', dadosAtuais.vendedora_override||null, campos.vendedora, alteradoPor]);
+      historicoItens.push([id, numPedido, 'vendedora', dadosAtuais.vendedora_override||null, campos.vendedora, alteradoPor, chaveItem]);
       updates.vendedora_override = campos.vendedora;
     }
 
@@ -919,7 +937,7 @@ app.post('/api/pedido/:id/editar', async (req,res) => {
     // Salva histórico
     for (const h of historicoItens) {
       await pool.query(
-        `INSERT INTO historico_pedidos(order_id,order_numero,campo,valor_anterior,valor_novo,alterado_por) VALUES($1,$2,$3,$4,$5,$6)`,
+        `INSERT INTO historico_pedidos(order_id,order_numero,campo,valor_anterior,valor_novo,alterado_por,item_id) VALUES($1,$2,$3,$4,$5,$6,$7)`,
         h
       );
     }
