@@ -97,6 +97,7 @@ async function initDB() {
       numero TEXT NOT NULL,
       modelo TEXT NOT NULL,
       data_envio TEXT,
+      data_producao TEXT,
       criada_em TIMESTAMP DEFAULT NOW()
     );
   CREATE TABLE IF NOT EXISTS pecas_pe (
@@ -117,6 +118,10 @@ async function initDB() {
   try {
     await pool.query(`ALTER TABLE historico_pedidos ADD COLUMN IF NOT EXISTS item_id TEXT`);
   } catch(e) { console.error('ALTER historico_pedidos:', e.message); }
+  // Garante a coluna data_producao em listas_pe (para bancos que já existiam antes)
+  try {
+    await pool.query(`ALTER TABLE listas_pe ADD COLUMN IF NOT EXISTS data_producao TEXT`);
+  } catch(e) { console.error('ALTER listas_pe:', e.message); }
   console.log('DB inicializado');
 }
 
@@ -893,6 +898,22 @@ app.post('/api/listas-pe', async (req,res) => {
       [id, numero, modelo.trim(), dataEnvio||null]
     );
     res.json({ ok:true, id, numero });
+  } catch(e) { res.status(500).json({error:e.message}); }
+});
+
+// Atualiza dados da lista PE (ex: data de produção)
+app.put('/api/listas-pe/:id', async (req,res) => {
+  try {
+    const { dataProducao, dataEnvio, modelo } = req.body;
+    const campos = [];
+    const vals = [req.params.id];
+    let i = 2;
+    if (dataProducao !== undefined) { campos.push(`data_producao=$${i++}`); vals.push(dataProducao||null); }
+    if (dataEnvio !== undefined) { campos.push(`data_envio=$${i++}`); vals.push(dataEnvio||null); }
+    if (modelo !== undefined) { campos.push(`modelo=$${i++}`); vals.push(modelo); }
+    if (!campos.length) return res.json({ok:true});
+    await pool.query(`UPDATE listas_pe SET ${campos.join(', ')} WHERE id=$1`, vals);
+    res.json({ ok:true });
   } catch(e) { res.status(500).json({error:e.message}); }
 });
 
