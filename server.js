@@ -50,6 +50,16 @@ async function initDB() {
     vendedora_override TEXT,
     atualizado_em TIMESTAMP DEFAULT NOW()
   );
+  CREATE TABLE IF NOT EXISTS itens_editados (
+    item_id TEXT PRIMARY KEY,
+    order_id TEXT,
+    modelo_override TEXT,
+    colecao_cor_override TEXT,
+    bordado_override TEXT,
+    data_envio_override TEXT,
+    vendedora_override TEXT,
+    atualizado_em TIMESTAMP DEFAULT NOW()
+  );
   CREATE TABLE IF NOT EXISTS listas_producao (
       id TEXT PRIMARY KEY,
       numero TEXT NOT NULL,
@@ -495,16 +505,24 @@ function mapItem(order, item, isDraft, listasCache, idx) {
   const modeloBase = extrairModeloBase(item.title);
   const dataEnvio = obs.dataEnvio || '—';
   const lista = (listasCache||[]).find(l => l.pedidoIds && l.pedidoIds.includes(String(order.id)));
-  // Aplica overrides manuais se existirem
-  const ov = (listasCache||[])._overrides?.[String(order.id)] || null;
-  const modeloFinal = ov?.modelo_override || modeloBase;
-  const colecaoCorFinal = ov?.colecao_cor_override || extrairColecaoCor(item.title, item.variant_title);
-  const bordadoFinal = ov?.bordado_override !== undefined ? ov.bordado_override : getBordado(obs, modeloBase);
-  const dataEnvioFinal = ov?.data_envio_override || dataEnvio;
-  const vendedoraFinal = ov?.vendedora_override || obs.vendedora || '—';
 
   // ID único do item
   const itemId = (isDraft ? 'D-' : '') + String(order.id) + '__' + String(item.id || 'li') + '__' + String(idx == null ? 0 : idx);
+
+  // Overrides: por item tem prioridade; cai no de pedido só como retaguarda (edições antigas)
+  const ovItem = (listasCache||[])._overridesItem?.[itemId] || null;
+  const ovPed = (listasCache||[])._overrides?.[String(order.id)] || null;
+  const pick = (campo) => {
+    if (ovItem && ovItem[campo] !== undefined && ovItem[campo] !== null) return ovItem[campo];
+    return undefined;
+  };
+  const modeloFinal = pick('modelo_override') || modeloBase;
+  const colecaoCorFinal = pick('colecao_cor_override') || extrairColecaoCor(item.title, item.variant_title);
+  const bordadoFinal = (ovItem && ovItem.bordado_override !== undefined && ovItem.bordado_override !== null)
+    ? ovItem.bordado_override : getBordado(obs, modeloBase);
+  const dataEnvioFinal = pick('data_envio_override') || dataEnvio;
+  const vendedoraFinal = pick('vendedora_override') || obs.vendedora || '—';
+  const foiEditado = !!ovItem;
 
   // Status base (calculado das tags da Shopify)
   let statusFinal = calcStatus(order.tags, dataEnvio, obs.isProntaEntrega, order.fulfillment_status);
@@ -527,7 +545,7 @@ function mapItem(order, item, isDraft, listasCache, idx) {
     modeloBase: modeloFinal, modelo: ov?.modelo_override || item.title,
     colecaoCor: colecaoCorFinal,
     bordado: bordadoFinal,
-    foiEditado: !!ov,
+    foiEditado: foiEditado,
     obsCliente: obs.obsCliente || '—',
     noteRaw: order.note || '',
     status: statusFinal,
@@ -568,6 +586,12 @@ async function buscarTodosPedidos(token, params={}) {
     listasCache._overrides = {};
     for (const ov of ovR.rows) listasCache._overrides[ov.order_id] = ov;
   } catch(e) { listasCache._overrides = {}; }
+  // Overrides por item (cada item editado individualmente)
+  try {
+    const ovItem = await pool.query(`SELECT * FROM itens_editados`);
+    listasCache._overridesItem = {};
+    for (const ov of ovItem.rows) listasCache._overridesItem[ov.item_id] = ov;
+  } catch(e) { listasCache._overridesItem = {}; }
   // Status de produção por item (banco) — sobrevive às sincronizações
   listasCache._statusItens = await loadStatusItens();
 
@@ -841,13 +865,14 @@ app.get('/api/historico-geral', async (req,res) => {
 
 app.post('/api/pedido/:id/editar', async (req,res) => {
   try {
-    const { id } = req.params;
-    const { alteradoPor, numero, campos } = req.body;
+    const { id } = req.params; // orderId
+    const { alteradoPor, numero, itemId, campos } = req.body;
     // campos = { modelo, colecaoCor, bordado, dataEnvio, vendedora }
     const numPedido = numero || null;
+    const chaveItem = itemId || id; // se não vier itemId, usa o orderId (retaguarda)
 
-    // Busca override atual
-    const atual = await pool.query(`SELECT * FROM pedidos_editados WHERE order_id=$1`, [id]);
+    // Busca override atual do ITEM
+    const atual = await pool.query(`SELECT * FROM itens_editados WHERE item_id=$1`, [chaveItem]);
     const dadosAtuais = atual.rows[0] || {};
 
     // Registra histórico para cada campo alterado
@@ -875,14 +900,18 @@ app.post('/api/pedido/:id/editar', async (req,res) => {
       updates.vendedora_override = campos.vendedora;
     }
 
-    // Salva overrides
+    // Salva overrides por ITEM
     if (Object.keys(updates).length > 0) {
-      const setCols = Object.keys(updates).map((k,i) => `${k}=$${i+2}`).join(',');
-      const vals = [id, ...Object.values(updates)];
+      const cols = Object.keys(updates);
+      // item_id ($1), order_id ($2), depois os campos
+      const colNames = ['item_id','order_id',...cols].join(',');
+      const placeholders = ['$1','$2',...cols.map((_,i)=>'$'+(i+3))].join(',');
+      const setCols = cols.map((k,i)=>`${k}=$${i+3}`).join(',');
+      const vals = [chaveItem, id, ...cols.map(k=>updates[k])];
       await pool.query(
-        `INSERT INTO pedidos_editados(order_id,${Object.keys(updates).join(',')},atualizado_em)
-         VALUES($1,${Object.keys(updates).map((_,i)=>'$'+(i+2)).join(',')},NOW())
-         ON CONFLICT(order_id) DO UPDATE SET ${setCols},atualizado_em=NOW()`,
+        `INSERT INTO itens_editados(${colNames},atualizado_em)
+         VALUES(${placeholders},NOW())
+         ON CONFLICT(item_id) DO UPDATE SET ${setCols},atualizado_em=NOW()`,
         vals
       );
     }
