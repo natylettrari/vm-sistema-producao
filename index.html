@@ -245,6 +245,7 @@ input[type=checkbox]{accent-color:var(--rose);cursor:pointer}
     <button class="nav-btn" onclick="showSec('relatorios',this)">Relatórios</button>
     <button class="nav-btn" onclick="showSec('minhas-listas',this)">Minhas Listas</button>
     <button class="nav-btn" onclick="showSec('alteracoes',this)" style="position:relative">Alterações<span id="badge-alteracoes" style="display:none;position:absolute;top:-2px;right:-2px;background:#c0392b;color:#fff;font-size:9px;min-width:16px;height:16px;border-radius:8px;padding:0 4px;line-height:16px;text-align:center">0</span></button>
+    <button class="nav-btn" onclick="showSec('pronta-entrega',this)">Pronta Entrega</button>
   </div>
   <div style="display:flex;align-items:center;gap:8px">
     <span style="font-size:10px;color:var(--text3);display:flex;align-items:center;gap:4px"><span style="width:6px;height:6px;border-radius:50%;background:#4caf7d;display:inline-block"></span>Shopify</span>
@@ -603,6 +604,20 @@ input[type=checkbox]{accent-color:var(--rose);cursor:pointer}
   </div>
 </div>
 
+<!-- PRONTA ENTREGA -->
+<div id="sec-pronta-entrega" class="section">
+  <div style="padding:20px 28px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px">
+      <div>
+        <div style="font-family:var(--serif);font-style:italic;font-size:22px;color:var(--rose)">Pronta Entrega</div>
+        <div style="font-size:12px;color:var(--text3);margin-top:2px">Peças produzidas para estoque — registre a venda quando vender</div>
+      </div>
+      <button class="btn btn-rose" onclick="abrirFormPE()">+ Adicionar peça</button>
+    </div>
+    <div id="pe-cont"><div class="loading"><span class="spin"></span>Carregando...</div></div>
+  </div>
+</div>
+
 <script>
 // ── Categorias ───────────────────────────────────────────────────────────────
 const BOLSAS = ['madison mini','madison','mala de rodinhas','madeleine','mochila 2 em 1','mochila mummy','louise mini','louise','bolsa cleo','bolsa cloé','bolsa cloe','bolsa liz','bolsa kate','frasqueira'];
@@ -652,6 +667,7 @@ function showSec(n,btn) {
   if(n==='bordado') carregarBordados();
   if(n==='minhas-listas') renderMinhasListas();
   if(n==='alteracoes') carregarAlteracoes();
+  if(n==='pronta-entrega') carregarPE();
 }
 
 function toast(msg) {
@@ -1380,6 +1396,181 @@ async function verificarNovasAlteracoes() {
     ALTERACOES_TOTAL_VISTO = totalAtual;
     atualizarBadgeAlteracoes(novas);
   } catch(e) { /* silencioso */ }
+}
+
+// ── Pronta Entrega ────────────────────────────────────────────────────────────
+let PECAS_PE = [];
+
+async function carregarPE() {
+  const el = document.getElementById('pe-cont');
+  if (el) el.innerHTML = '<div class="loading"><span class="spin"></span>Carregando...</div>';
+  try {
+    const r = await fetch('/api/pronta-entrega');
+    const d = await r.json();
+    PECAS_PE = d.pecas || [];
+    renderPE();
+  } catch(e) {
+    if (el) el.innerHTML = `<div class="err">Erro ao carregar: ${e.message}</div>`;
+  }
+}
+
+function renderPE() {
+  const el = document.getElementById('pe-cont');
+  if (!el) return;
+  const disponiveis = PECAS_PE.filter(p => !p.vendida);
+  const vendidas = PECAS_PE.filter(p => p.vendida);
+
+  if (!PECAS_PE.length) {
+    el.innerHTML = '<div class="loading">Nenhuma peça de pronta entrega ainda. Clique em "+ Adicionar peça".</div>';
+    return;
+  }
+
+  const cardPeca = (p, vendida) => `
+    <div style="background:var(--bg2);border:1px solid ${vendida?'var(--border)':'#a8d8b8'};border-radius:9px;padding:12px 16px;margin-bottom:8px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">
+        <div>
+          <span style="font-weight:600;font-size:14px;color:var(--text)">${p.modelo}</span>
+          ${p.colecao_cor?`<span style="font-size:12px;color:var(--text2);margin-left:8px">${p.colecao_cor}</span>`:''}
+          ${p.bordado?`<span style="font-size:11px;color:var(--rose);margin-left:8px">${p.bordado}</span>`:''}
+        </div>
+        ${vendida
+          ? `<span style="font-size:11px;background:#edf7f1;color:#1e6640;padding:3px 9px;border-radius:5px">✓ Vendida${p.numero_pedido?' · '+p.numero_pedido:''}${p.vendedora?' · '+p.vendedora:''}</span>`
+          : `<div style="display:flex;gap:6px">
+               <button class="btn btn-rose btn-sm" onclick="abrirVenderPE('${p.id}')">Marcar vendida</button>
+               <button class="btn btn-outline btn-sm" onclick="excluirPE('${p.id}')">Excluir</button>
+             </div>`}
+      </div>
+      ${p.data_envio?`<div style="font-size:11px;color:var(--text3);margin-top:5px">Envio: ${p.data_envio}</div>`:''}
+      ${p.obs?`<div style="font-size:11px;color:var(--text3);margin-top:3px">Obs: ${p.obs}</div>`:''}
+    </div>`;
+
+  el.innerHTML = `
+    <div style="margin-bottom:18px">
+      <div style="font-size:13px;color:var(--text2);font-weight:600;margin-bottom:8px">Disponíveis em estoque (${disponiveis.length})</div>
+      ${disponiveis.length ? disponiveis.map(p=>cardPeca(p,false)).join('') : '<div style="font-size:12px;color:var(--text3);padding:8px">Nenhuma peça disponível.</div>'}
+    </div>
+    ${vendidas.length ? `<div>
+      <div style="font-size:13px;color:var(--text2);font-weight:600;margin-bottom:8px">Já vendidas (${vendidas.length})</div>
+      ${vendidas.map(p=>cardPeca(p,true)).join('')}
+    </div>` : ''}`;
+}
+
+function abrirFormPE() {
+  const modal = document.createElement('div');
+  modal.className = 'cal-modal';
+  modal.id = 'modal-pe';
+  modal.innerHTML = `
+    <div class="cal-modal-box" style="max-width:480px;width:95vw">
+      <div style="font-family:var(--serif);font-style:italic;font-size:19px;color:var(--rose);margin-bottom:14px">Adicionar peça de pronta entrega</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
+        <div style="grid-column:1/3">
+          <label style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);display:block;margin-bottom:4px">Modelo *</label>
+          <input id="pe-modelo" placeholder="Ex: Madison" style="width:100%;font-size:13px;padding:8px 11px;border-radius:7px;border:1px solid var(--border2);background:var(--bg2)">
+        </div>
+        <div>
+          <label style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);display:block;margin-bottom:4px">Cor / Coleção</label>
+          <input id="pe-cor" placeholder="Ex: Ella Café" style="width:100%;font-size:13px;padding:8px 11px;border-radius:7px;border:1px solid var(--border2);background:var(--bg2)">
+        </div>
+        <div>
+          <label style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);display:block;margin-bottom:4px">Bordado</label>
+          <input id="pe-bordado" placeholder="Opcional" style="width:100%;font-size:13px;padding:8px 11px;border-radius:7px;border:1px solid var(--border2);background:var(--bg2)">
+        </div>
+        <div>
+          <label style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);display:block;margin-bottom:4px">Data de envio</label>
+          <input id="pe-data" placeholder="Ex: 30/06/2026" style="width:100%;font-size:13px;padding:8px 11px;border-radius:7px;border:1px solid var(--border2);background:var(--bg2)">
+        </div>
+        <div>
+          <label style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);display:block;margin-bottom:4px">Observação</label>
+          <input id="pe-obs" placeholder="Opcional" style="width:100%;font-size:13px;padding:8px 11px;border-radius:7px;border:1px solid var(--border2);background:var(--bg2)">
+        </div>
+      </div>
+      <div style="font-size:11px;color:var(--text3);margin-bottom:14px">O número do pedido e a vendedora ficam em branco — você preenche quando a peça for vendida.</div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn btn-outline" onclick="fecharModalPE()">Cancelar</button>
+        <button class="btn btn-rose" onclick="salvarPE()">Adicionar</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  modal.addEventListener('click', e => { if(e.target===modal) fecharModalPE(); });
+}
+
+function fecharModalPE() {
+  const m = document.getElementById('modal-pe');
+  if (m) m.remove();
+}
+
+async function salvarPE() {
+  const modelo = document.getElementById('pe-modelo').value.trim();
+  if (!modelo) { toast('Informe o modelo'); return; }
+  const body = {
+    modelo,
+    colecaoCor: document.getElementById('pe-cor').value.trim(),
+    bordado: document.getElementById('pe-bordado').value.trim(),
+    dataEnvio: document.getElementById('pe-data').value.trim(),
+    obs: document.getElementById('pe-obs').value.trim(),
+  };
+  try {
+    const r = await fetch('/api/pronta-entrega', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    if (!r.ok) throw new Error('Erro ao salvar');
+    fecharModalPE();
+    toast('✅ Peça adicionada à pronta entrega');
+    carregarPE();
+  } catch(e) { toast('Erro: '+e.message); }
+}
+
+function abrirVenderPE(id) {
+  const peca = PECAS_PE.find(p => p.id === id);
+  if (!peca) return;
+  const modal = document.createElement('div');
+  modal.className = 'cal-modal';
+  modal.id = 'modal-vender-pe';
+  modal.innerHTML = `
+    <div class="cal-modal-box" style="max-width:420px;width:95vw">
+      <div style="font-family:var(--serif);font-style:italic;font-size:19px;color:var(--rose);margin-bottom:6px">Registrar venda</div>
+      <div style="font-size:13px;color:var(--text2);margin-bottom:14px">${peca.modelo}${peca.colecao_cor?' · '+peca.colecao_cor:''}</div>
+      <div style="margin-bottom:10px">
+        <label style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);display:block;margin-bottom:4px">Número do pedido</label>
+        <input id="vpe-numero" placeholder="Ex: #3700" style="width:100%;font-size:13px;padding:8px 11px;border-radius:7px;border:1px solid var(--border2);background:var(--bg2)">
+      </div>
+      <div style="margin-bottom:16px">
+        <label style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);display:block;margin-bottom:4px">Vendedora</label>
+        <input id="vpe-vendedora" placeholder="Ex: MARI" style="width:100%;font-size:13px;padding:8px 11px;border-radius:7px;border:1px solid var(--border2);background:var(--bg2)">
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn btn-outline" onclick="fecharVenderPE()">Cancelar</button>
+        <button class="btn btn-rose" onclick="confirmarVenderPE('${id}')">Confirmar venda</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  modal.addEventListener('click', e => { if(e.target===modal) fecharVenderPE(); });
+}
+
+function fecharVenderPE() {
+  const m = document.getElementById('modal-vender-pe');
+  if (m) m.remove();
+}
+
+async function confirmarVenderPE(id) {
+  const body = {
+    numeroPedido: document.getElementById('vpe-numero').value.trim(),
+    vendedora: document.getElementById('vpe-vendedora').value.trim(),
+  };
+  try {
+    const r = await fetch('/api/pronta-entrega/'+id+'/vender', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    if (!r.ok) throw new Error('Erro ao registrar');
+    fecharVenderPE();
+    toast('✅ Venda registrada');
+    carregarPE();
+  } catch(e) { toast('Erro: '+e.message); }
+}
+
+async function excluirPE(id) {
+  if (!confirm('Excluir esta peça de pronta entrega?')) return;
+  try {
+    await fetch('/api/pronta-entrega/'+id, {method:'DELETE'});
+    toast('Peça excluída');
+    carregarPE();
+  } catch(e) { toast('Erro: '+e.message); }
 }
 
 async function imprimirLista(id) {
