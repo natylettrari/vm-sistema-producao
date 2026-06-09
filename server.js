@@ -157,6 +157,28 @@ async function initDB() {
   try {
     await pool.query(`ALTER TABLE listas_pe ADD COLUMN IF NOT EXISTS data_producao TEXT`);
   } catch(e) { console.error('ALTER listas_pe:', e.message); }
+  // Garante todas as colunas da tabela usuarios (para bancos que já tinham uma versão incompleta)
+  try {
+    await pool.query(`ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS nome TEXT`);
+    await pool.query(`ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS email TEXT`);
+    await pool.query(`ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS whatsapp TEXT`);
+    await pool.query(`ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS senha_hash TEXT`);
+    await pool.query(`ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS papel TEXT DEFAULT 'leitura'`);
+    await pool.query(`ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS ativo BOOLEAN DEFAULT TRUE`);
+    await pool.query(`ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS criado_em TIMESTAMP DEFAULT NOW()`);
+  } catch(e) { console.error('ALTER usuarios:', e.message); }
+  // Conserta usuários que ficaram sem papel definido (de versões incompletas)
+  try {
+    await pool.query(`UPDATE usuarios SET papel='leitura' WHERE papel IS NULL`);
+    await pool.query(`UPDATE usuarios SET ativo=TRUE WHERE ativo IS NULL`);
+    // Se existe usuário mas nenhum admin, promove o mais antigo a admin
+    const temAdmin = (await pool.query(`SELECT COUNT(*)::int AS n FROM usuarios WHERE papel='admin'`)).rows[0].n;
+    const total = (await pool.query(`SELECT COUNT(*)::int AS n FROM usuarios`)).rows[0].n;
+    if (total > 0 && temAdmin === 0) {
+      await pool.query(`UPDATE usuarios SET papel='admin', ativo=TRUE WHERE id IN (SELECT id FROM usuarios ORDER BY criado_em ASC NULLS FIRST LIMIT 1)`);
+      console.log('Um usuário foi promovido a admin (não havia nenhum)');
+    }
+  } catch(e) { console.error('corrigir papel usuarios:', e.message); }
   // Cria um admin inicial se não houver nenhum usuário ainda
   try {
     const r = await pool.query(`SELECT COUNT(*)::int AS n FROM usuarios`);
