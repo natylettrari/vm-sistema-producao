@@ -242,12 +242,17 @@ input[type=checkbox]{accent-color:var(--rose);cursor:pointer}
     <button class="nav-btn" onclick="showSec('lista',this)">Lista de Produção</button>
     <button class="nav-btn" onclick="showSec('calendario',this)">Calendário</button>
     <button class="nav-btn" onclick="showSec('ficha',this)">Ficha de Corte</button>
-    <button class="nav-btn" onclick="showSec('bordado',this)">Bordados</button>
-    <button class="nav-btn" onclick="showSec('relatorios',this)">Relatórios</button>
     <button class="nav-btn" onclick="showSec('minhas-listas',this)">Minhas Listas</button>
     <button class="nav-btn" onclick="showSec('alteracoes',this)" style="position:relative">Alterações<span id="badge-alteracoes" style="display:none;position:absolute;top:-2px;right:-2px;background:#c0392b;color:#fff;font-size:9px;min-width:16px;height:16px;border-radius:8px;padding:0 4px;line-height:16px;text-align:center">0</span></button>
     <button class="nav-btn" onclick="showSec('pronta-entrega',this)">Pronta Entrega</button>
-    <button class="nav-btn" id="nav-usuarios" onclick="showSec('usuarios',this)" style="display:none">Usuários</button>
+    <div style="position:relative;display:inline-block">
+      <button class="nav-btn" onclick="toggleMenuMais(event)" id="btn-mais">Mais ▾</button>
+      <div id="menu-mais" style="display:none;position:absolute;top:100%;right:0;margin-top:4px;background:var(--bg2);border:1px solid var(--border2);border-radius:9px;box-shadow:0 6px 20px rgba(0,0,0,.12);z-index:1500;min-width:170px;overflow:hidden">
+        <button class="nav-btn" style="display:block;width:100%;text-align:left;border-radius:0;padding:10px 16px" onclick="showSecMais('bordado')">Bordados</button>
+        <button class="nav-btn" style="display:block;width:100%;text-align:left;border-radius:0;padding:10px 16px" onclick="showSecMais('relatorios')">Relatórios</button>
+        <button class="nav-btn" id="nav-usuarios" style="display:none;width:100%;text-align:left;border-radius:0;padding:10px 16px" onclick="showSecMais('usuarios')">Usuários</button>
+      </div>
+    </div>
   </div>
   <div style="display:flex;align-items:center;gap:8px">
     <span id="usuario-logado" style="font-size:10px;color:var(--text3)"></span>
@@ -736,6 +741,33 @@ function showSec(n,btn) {
   if(n==='pronta-entrega') carregarPE();
   if(n==='usuarios') carregarUsuarios();
 }
+
+// Menu "Mais" no canto (Bordados, Relatórios, Usuários)
+function toggleMenuMais(e) {
+  if (e) e.stopPropagation();
+  const m = document.getElementById('menu-mais');
+  if (!m) return;
+  m.style.display = (m.style.display === 'none' || !m.style.display) ? 'block' : 'none';
+}
+function fecharMenuMais() {
+  const m = document.getElementById('menu-mais');
+  if (m) m.style.display = 'none';
+}
+function showSecMais(n) {
+  fecharMenuMais();
+  showSec(n, null);
+  // Destaca o botão "Mais" como ativo quando uma de suas seções está aberta
+  const btnMais = document.getElementById('btn-mais');
+  if (btnMais) btnMais.classList.add('active');
+}
+// Fecha o menu ao clicar fora
+document.addEventListener('click', (e) => {
+  const m = document.getElementById('menu-mais');
+  const b = document.getElementById('btn-mais');
+  if (m && m.style.display === 'block' && !m.contains(e.target) && e.target !== b) {
+    m.style.display = 'none';
+  }
+});
 
 function toast(msg) {
   const t=document.getElementById('toast');
