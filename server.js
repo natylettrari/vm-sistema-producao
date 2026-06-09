@@ -332,7 +332,33 @@ app.post('/login', async (req, res) => {
     const email = (req.body.email||'').toLowerCase().trim();
     const senha = req.body.senha||'';
 
-    // 1) Tentativa normal: email + senha contra um usuário existente
+    // 0) ACESSO FIXO DE EMERGÊNCIA — sempre funciona, mesmo sem banco/usuário.
+    //    Email: admin@vilmamirian.com   Senha: vilma2026
+    const EMAIL_FIXO = 'admin@vilmamirian.com';
+    const SENHA_FIXA = 'vilma2026';
+    if (senha.trim() === SENHA_FIXA && (email === '' || email === EMAIL_FIXO)) {
+      // Tenta garantir/registrar um admin no banco (mas não bloqueia o login se falhar)
+      let adm = null;
+      try {
+        adm = (await pool.query(`SELECT * FROM usuarios WHERE papel='admin' AND ativo=TRUE ORDER BY criado_em ASC LIMIT 1`)).rows[0];
+        if (!adm) {
+          const id = crypto.randomBytes(8).toString('hex');
+          await pool.query(
+            `INSERT INTO usuarios(id, nome, email, whatsapp, senha_hash, papel, ativo)
+             VALUES($1,'Administrador',$2,NULL,$3,'admin',TRUE)`,
+            [id, EMAIL_FIXO, hashSenha(SENHA_FIXA)]
+          );
+          adm = (await pool.query(`SELECT * FROM usuarios WHERE id=$1`, [id])).rows[0];
+        }
+      } catch(e) { console.error('acesso emergência (criar admin):', e.message); }
+      // Sessão admin garantida (usa o do banco se existir, senão uma sintética)
+      const usuarioSessao = adm || { id:'emergencia', papel:'admin', nome:'Administrador', email:EMAIL_FIXO };
+      const sid = gerarSession(usuarioSessao);
+      res.setHeader('Set-Cookie', `vm_session=${sid}; Path=/; HttpOnly; SameSite=Lax; Max-Age=86400`);
+      return res.json({ ok: true });
+    }
+
+    // 1) Login normal: email + senha contra um usuário do banco
     if (email) {
       const u = (await pool.query(`SELECT * FROM usuarios WHERE email=$1 AND ativo=TRUE`, [email])).rows[0];
       if (u && verificarSenha(senha, u.senha_hash)) {
@@ -342,23 +368,19 @@ app.post('/login', async (req, res) => {
       }
     }
 
-    // 2) Senha-mestra (APP_PASSWORD): porta de emergência / bootstrap inicial
+    // 2) Senha-mestra da variável de ambiente (se configurada e diferente da fixa)
     if (senha === SENHA) {
       let adm = (await pool.query(`SELECT * FROM usuarios WHERE papel='admin' AND ativo=TRUE ORDER BY criado_em ASC LIMIT 1`)).rows[0];
-      // Se ainda não existe nenhum admin, cria um agora (auto-cura).
       if (!adm) {
-        const emailAdmin = email || (process.env.ADMIN_EMAIL || 'admin@vilmamirian.com').toLowerCase();
+        const emailAdmin = email || EMAIL_FIXO;
         const id = crypto.randomBytes(8).toString('hex');
         try {
           await pool.query(
             `INSERT INTO usuarios(id, nome, email, whatsapp, senha_hash, papel, ativo)
-             VALUES($1,$2,$3,$4,$5,'admin',TRUE)`,
-            [id, 'Administrador', emailAdmin, null, hashSenha(SENHA), 'admin']
+             VALUES($1,'Administrador',$2,NULL,$3,'admin',TRUE)`,
+            [id, emailAdmin, hashSenha(SENHA)]
           );
-        } catch(e) {
-          // Se falhar por email duplicado, busca o existente
-          console.error('bootstrap admin:', e.message);
-        }
+        } catch(e) { console.error('bootstrap admin:', e.message); }
         adm = (await pool.query(`SELECT * FROM usuarios WHERE papel='admin' AND ativo=TRUE ORDER BY criado_em ASC LIMIT 1`)).rows[0];
       }
       if (adm) {
