@@ -3569,13 +3569,28 @@ async function carregarFicha() {
   const totPE = pecasPE.length;
   const tituloFiltro = [FICHA_LOTE?'Lote '+FICHA_LOTE:'', FICHA_MODELOS.join(', '), FICHA_TIPO!=='todos'?(FICHA_TIPO==='bolsa'?'Bolsas':'Acessórios'):''].filter(Boolean).join(' · ') || 'Todos os pedidos';
 
+  // Identifica quais listas entram neste corte (produção normais + pronta entrega)
+  const listasNorm = [...new Set(peds.map(p => p.listaNumero).filter(Boolean))].sort();
+  const listasPE = [...new Set(pecasPE.map(p => p.listaNumero).filter(Boolean))].sort();
+  const etiquetasListas = [
+    ...listasNorm.map(n => 'Lista #' + n),
+    ...listasPE.map(n => 'Lista PE #' + n),
+  ];
+  const semLista = peds.some(p => !p.listaNumero); // há peças que não estão em nenhuma lista
+
   let html = `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">
     <div style="font-size:13px;color:var(--text3)"><strong style="color:var(--text);font-size:15px;font-family:var(--serif);font-style:italic">${tot} peças</strong> · ${tituloFiltro}${totPE?` · <span style="color:#1e6640">${totPE} de pronta entrega</span>`:''}</div>
     <div style="display:flex;gap:8px;font-size:12px">
       <span style="background:var(--rose-ll);padding:4px 10px;border-radius:6px;color:var(--rose)">👜 ${peds.filter(p=>getTipo(p.modeloBase)==='bolsa').length} bolsas</span>
       <span style="background:var(--bg3);padding:4px 10px;border-radius:6px;color:var(--text2)">🎀 ${peds.filter(p=>getTipo(p.modeloBase)!=='bolsa').length} acessórios</span>
     </div>
-  </div><div class="ficha-grid">`;
+  </div>
+  ${(etiquetasListas.length || semLista) ? `<div style="font-size:12px;color:var(--text2);margin-bottom:14px;padding:8px 12px;background:var(--bg3);border-radius:8px">
+    <strong style="color:var(--text3);font-size:10px;text-transform:uppercase;letter-spacing:.06em">Listas neste corte:</strong>
+    ${etiquetasListas.map(e=>`<span style="display:inline-block;margin-left:6px;background:var(--bg2);border:1px solid var(--border2);border-radius:12px;padding:2px 10px;font-size:11px">${e}</span>`).join('')}
+    ${semLista?`<span style="display:inline-block;margin-left:6px;color:var(--text3);font-size:11px;font-style:italic">+ pedidos avulsos (sem lista)</span>`:''}
+  </div>` : ''}
+  <div class="ficha-grid">`;
 
   for(const g of grupos){
     html+=`<div class="ficha-card"><div class="ficha-hd"><span>${g.titulo}</span><span>${g.total} pç</span></div>`;
@@ -3585,7 +3600,7 @@ async function carregarFicha() {
   html+='</div>';
   document.getElementById('ficha-cont').innerHTML=html;
   // Guarda para impressão em janela limpa
-  window._FICHA_DADOS = { grupos, tot, totPE, tituloFiltro, visao: FICHA_VISAO };
+  window._FICHA_DADOS = { grupos, tot, totPE, tituloFiltro, visao: FICHA_VISAO, etiquetasListas, semLista };
 }
 
 // Imprime a ficha em janela limpa (evita folha vazia)
@@ -3621,6 +3636,7 @@ function imprimirFicha() {
       <div class="cab">
         <div class="cab-tit">Vilma Mirian — Ficha de Corte</div>
         <div class="cab-sub">${d.tot} peças · ${d.tituloFiltro}${d.totPE?' · '+d.totPE+' de pronta entrega':''} · ${subtitulo}</div>
+        ${(d.etiquetasListas && d.etiquetasListas.length) || d.semLista ? `<div style="font-size:11px;color:#5a5052;margin-top:6px"><strong>Listas neste corte:</strong> ${(d.etiquetasListas||[]).join(' · ')}${d.semLista?(d.etiquetasListas&&d.etiquetasListas.length?' · ':'')+'pedidos avulsos':''}</div>` : ''}
       </div>
       <div class="ficha-grid">${cards}</div>
       <script>window.onload=function(){setTimeout(function(){window.print();},200);};<\/script>
