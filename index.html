@@ -71,7 +71,7 @@ tbody tr:hover td{background:var(--rose-ll)}
 .prioridade-row td{background:#fdf6f8!important}
 .prioridade-row:hover td{background:#f9ebef!important}
 .prio-badge{display:inline-block;font-size:9px;padding:1px 5px;border-radius:3px;background:#8A4C52;color:#fff;font-weight:600;letter-spacing:.04em;margin-left:3px}
-body.somente-leitura .edit-btn,body.somente-leitura .btn-rose,body.somente-leitura .btn-gold{display:none!important}
+body.somente-leitura .edit-btn{display:none!important}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.7}}
 .sem-data-row td{color:var(--text3)!important}
 .draft-pill,.kit-pill,.lista-pill{display:inline-block;font-size:9px;padding:1px 5px;border-radius:3px;margin-left:2px;font-weight:500}
@@ -710,9 +710,11 @@ function aplicarPermissoes() {
     const labelPapel = (USUARIO.permissoes && USUARIO.permissoes.label) || USUARIO.papel;
     info.textContent = USUARIO.nome + ' · ' + labelPapel;
   }
-  // Se for somente leitura, esconde botões de ação (edição)
+  // Ajusta o modo somente-leitura (e remove se não for o caso)
   if (USUARIO.permissoes && USUARIO.permissoes.somenteLeitura) {
     document.body.classList.add('somente-leitura');
+  } else {
+    document.body.classList.remove('somente-leitura');
   }
 }
 
