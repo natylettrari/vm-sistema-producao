@@ -50,18 +50,6 @@ const pool = new Pool({
 });
 
 async function initDB() {
-  // Conserto de schema: se a tabela usuarios já existe com id no formato errado
-  // (número em vez de texto), recria limpa. Só afeta a tabela de usuários.
-  try {
-    const col = await pool.query(
-      `SELECT data_type FROM information_schema.columns WHERE table_name='usuarios' AND column_name='id'`
-    );
-    if (col.rows.length && col.rows[0].data_type !== 'text') {
-      await pool.query(`DROP TABLE IF EXISTS usuarios`);
-      console.log('Tabela usuarios recriada (corrigido formato do id)');
-    }
-  } catch(e) { console.error('checar schema usuarios:', e.message); }
-
   await pool.query(`
     CREATE TABLE IF NOT EXISTS configuracoes (
       chave TEXT PRIMARY KEY,
@@ -150,7 +138,7 @@ async function initDB() {
       criada_em TIMESTAMP DEFAULT NOW(),
       vendida_em TIMESTAMP
     );
-  CREATE TABLE IF NOT EXISTS usuarios (
+  CREATE TABLE IF NOT EXISTS usuarios_v2 (
       id TEXT PRIMARY KEY,
       nome TEXT NOT NULL,
       email TEXT UNIQUE NOT NULL,
@@ -169,40 +157,18 @@ async function initDB() {
   try {
     await pool.query(`ALTER TABLE listas_pe ADD COLUMN IF NOT EXISTS data_producao TEXT`);
   } catch(e) { console.error('ALTER listas_pe:', e.message); }
-  // Garante todas as colunas da tabela usuarios (para bancos que já tinham uma versão incompleta)
-  try {
-    await pool.query(`ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS nome TEXT`);
-    await pool.query(`ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS email TEXT`);
-    await pool.query(`ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS whatsapp TEXT`);
-    await pool.query(`ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS senha_hash TEXT`);
-    await pool.query(`ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS papel TEXT DEFAULT 'leitura'`);
-    await pool.query(`ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS ativo BOOLEAN DEFAULT TRUE`);
-    await pool.query(`ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS criado_em TIMESTAMP DEFAULT NOW()`);
-  } catch(e) { console.error('ALTER usuarios:', e.message); }
-  // Conserta usuários que ficaram sem papel definido (de versões incompletas)
-  try {
-    await pool.query(`UPDATE usuarios SET papel='leitura' WHERE papel IS NULL`);
-    await pool.query(`UPDATE usuarios SET ativo=TRUE WHERE ativo IS NULL`);
-    // Se existe usuário mas nenhum admin, promove o mais antigo a admin
-    const temAdmin = (await pool.query(`SELECT COUNT(*)::int AS n FROM usuarios WHERE papel='admin'`)).rows[0].n;
-    const total = (await pool.query(`SELECT COUNT(*)::int AS n FROM usuarios`)).rows[0].n;
-    if (total > 0 && temAdmin === 0) {
-      await pool.query(`UPDATE usuarios SET papel='admin', ativo=TRUE WHERE id IN (SELECT id FROM usuarios ORDER BY criado_em ASC NULLS FIRST LIMIT 1)`);
-      console.log('Um usuário foi promovido a admin (não havia nenhum)');
-    }
-  } catch(e) { console.error('corrigir papel usuarios:', e.message); }
   // Cria um admin inicial se não houver nenhum usuário ainda
   try {
-    const r = await pool.query(`SELECT COUNT(*)::int AS n FROM usuarios`);
+    const r = await pool.query(`SELECT COUNT(*)::int AS n FROM usuarios_v2`);
     if (r.rows[0].n === 0) {
-      const emailAdmin = process.env.ADMIN_EMAIL || 'admin@vilmamirian.com';
+      const emailAdmin = (process.env.ADMIN_EMAIL || 'admin@vilmamirian.com').toLowerCase();
       const senhaAdmin = process.env.APP_PASSWORD || 'vilmamirian2025';
       await pool.query(
-        `INSERT INTO usuarios(id, nome, email, whatsapp, senha_hash, papel, ativo)
+        `INSERT INTO usuarios_v2(id, nome, email, whatsapp, senha_hash, papel, ativo)
          VALUES($1,$2,$3,$4,$5,'admin',TRUE)`,
-        [crypto.randomBytes(8).toString('hex'), 'Administrador', emailAdmin.toLowerCase(), null, hashSenha(senhaAdmin)]
+        [crypto.randomBytes(8).toString('hex'), 'Administrador', emailAdmin, null, hashSenha(senhaAdmin)]
       );
-      console.log('Admin inicial criado:', emailAdmin, '(senha = APP_PASSWORD atual)');
+      console.log('Admin inicial criado:', emailAdmin);
     }
   } catch(e) { console.error('criar admin inicial:', e.message); }
   console.log('DB inicializado');
@@ -374,15 +340,15 @@ app.post('/login', async (req, res) => {
       // Tenta garantir/registrar um admin no banco (mas não bloqueia o login se falhar)
       let adm = null;
       try {
-        adm = (await pool.query(`SELECT * FROM usuarios WHERE papel='admin' AND ativo=TRUE ORDER BY criado_em ASC LIMIT 1`)).rows[0];
+        adm = (await pool.query(`SELECT * FROM usuarios_v2 WHERE papel='admin' AND ativo=TRUE ORDER BY criado_em ASC LIMIT 1`)).rows[0];
         if (!adm) {
           const id = crypto.randomBytes(8).toString('hex');
           await pool.query(
-            `INSERT INTO usuarios(id, nome, email, whatsapp, senha_hash, papel, ativo)
+            `INSERT INTO usuarios_v2(id, nome, email, whatsapp, senha_hash, papel, ativo)
              VALUES($1,'Administrador',$2,NULL,$3,'admin',TRUE)`,
             [id, EMAIL_FIXO, hashSenha(SENHA_FIXA)]
           );
-          adm = (await pool.query(`SELECT * FROM usuarios WHERE id=$1`, [id])).rows[0];
+          adm = (await pool.query(`SELECT * FROM usuarios_v2 WHERE id=$1`, [id])).rows[0];
         }
       } catch(e) { console.error('acesso emergência (criar admin):', e.message); }
       // Sessão admin garantida (usa o do banco se existir, senão uma sintética)
@@ -394,7 +360,7 @@ app.post('/login', async (req, res) => {
 
     // 1) Login normal: email + senha contra um usuário do banco
     if (email) {
-      const u = (await pool.query(`SELECT * FROM usuarios WHERE email=$1 AND ativo=TRUE`, [email])).rows[0];
+      const u = (await pool.query(`SELECT * FROM usuarios_v2 WHERE email=$1 AND ativo=TRUE`, [email])).rows[0];
       if (u && verificarSenha(senha, u.senha_hash)) {
         const sid = gerarSession(u);
         res.setHeader('Set-Cookie', `vm_session=${sid}; Path=/; HttpOnly; SameSite=Lax; Max-Age=86400`);
@@ -404,18 +370,18 @@ app.post('/login', async (req, res) => {
 
     // 2) Senha-mestra da variável de ambiente (se configurada e diferente da fixa)
     if (senha === SENHA) {
-      let adm = (await pool.query(`SELECT * FROM usuarios WHERE papel='admin' AND ativo=TRUE ORDER BY criado_em ASC LIMIT 1`)).rows[0];
+      let adm = (await pool.query(`SELECT * FROM usuarios_v2 WHERE papel='admin' AND ativo=TRUE ORDER BY criado_em ASC LIMIT 1`)).rows[0];
       if (!adm) {
         const emailAdmin = email || EMAIL_FIXO;
         const id = crypto.randomBytes(8).toString('hex');
         try {
           await pool.query(
-            `INSERT INTO usuarios(id, nome, email, whatsapp, senha_hash, papel, ativo)
+            `INSERT INTO usuarios_v2(id, nome, email, whatsapp, senha_hash, papel, ativo)
              VALUES($1,'Administrador',$2,NULL,$3,'admin',TRUE)`,
             [id, emailAdmin, hashSenha(SENHA)]
           );
         } catch(e) { console.error('bootstrap admin:', e.message); }
-        adm = (await pool.query(`SELECT * FROM usuarios WHERE papel='admin' AND ativo=TRUE ORDER BY criado_em ASC LIMIT 1`)).rows[0];
+        adm = (await pool.query(`SELECT * FROM usuarios_v2 WHERE papel='admin' AND ativo=TRUE ORDER BY criado_em ASC LIMIT 1`)).rows[0];
       }
       if (adm) {
         const sid = gerarSession(adm);
@@ -446,7 +412,7 @@ app.get('/api/me', (req, res) => {
 // ── Gestão de usuários (somente admin) ────────────────────────────────────────
 app.get('/api/usuarios', exigirAdmin, async (req, res) => {
   try {
-    const r = await pool.query(`SELECT id, nome, email, whatsapp, papel, ativo, criado_em FROM usuarios ORDER BY criado_em ASC`);
+    const r = await pool.query(`SELECT id, nome, email, whatsapp, papel, ativo, criado_em FROM usuarios_v2 ORDER BY criado_em ASC`);
     res.json({ usuarios: r.rows, papeis: PAPEIS });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
@@ -457,11 +423,11 @@ app.post('/api/usuarios', exigirAdmin, async (req, res) => {
     if (!nome || !email || !senha) return res.status(400).json({ error: 'Nome, email e senha são obrigatórios' });
     if (!PAPEIS[papel]) return res.status(400).json({ error: 'Papel inválido' });
     const emailL = email.toLowerCase().trim();
-    const existe = (await pool.query(`SELECT 1 FROM usuarios WHERE email=$1`, [emailL])).rows[0];
+    const existe = (await pool.query(`SELECT 1 FROM usuarios_v2 WHERE email=$1`, [emailL])).rows[0];
     if (existe) return res.status(409).json({ error: 'Já existe um usuário com esse email' });
     const id = crypto.randomBytes(8).toString('hex');
     await pool.query(
-      `INSERT INTO usuarios(id, nome, email, whatsapp, senha_hash, papel, ativo) VALUES($1,$2,$3,$4,$5,$6,TRUE)`,
+      `INSERT INTO usuarios_v2(id, nome, email, whatsapp, senha_hash, papel, ativo) VALUES($1,$2,$3,$4,$5,$6,TRUE)`,
       [id, nome.trim(), emailL, (whatsapp||'').trim()||null, hashSenha(senha), papel]
     );
     res.json({ ok: true, id });
@@ -472,20 +438,20 @@ app.put('/api/usuarios/:id', exigirAdmin, async (req, res) => {
   try {
     const { nome, email, whatsapp, papel, ativo } = req.body;
     if (papel && !PAPEIS[papel]) return res.status(400).json({ error: 'Papel inválido' });
-    const u = (await pool.query(`SELECT * FROM usuarios WHERE id=$1`, [req.params.id])).rows[0];
+    const u = (await pool.query(`SELECT * FROM usuarios_v2 WHERE id=$1`, [req.params.id])).rows[0];
     if (!u) return res.status(404).json({ error: 'Usuário não encontrado' });
     // Impede remover o último admin ativo
     if (u.papel === 'admin' && (papel && papel !== 'admin' || ativo === false)) {
-      const nAdmins = (await pool.query(`SELECT COUNT(*)::int AS n FROM usuarios WHERE papel='admin' AND ativo=TRUE`)).rows[0].n;
+      const nAdmins = (await pool.query(`SELECT COUNT(*)::int AS n FROM usuarios_v2 WHERE papel='admin' AND ativo=TRUE`)).rows[0].n;
       if (nAdmins <= 1) return res.status(400).json({ error: 'Não é possível alterar o último administrador ativo' });
     }
     const emailL = email ? email.toLowerCase().trim() : u.email;
     if (emailL !== u.email) {
-      const existe = (await pool.query(`SELECT 1 FROM usuarios WHERE email=$1 AND id<>$2`, [emailL, u.id])).rows[0];
+      const existe = (await pool.query(`SELECT 1 FROM usuarios_v2 WHERE email=$1 AND id<>$2`, [emailL, u.id])).rows[0];
       if (existe) return res.status(409).json({ error: 'Já existe um usuário com esse email' });
     }
     await pool.query(
-      `UPDATE usuarios SET nome=$2, email=$3, whatsapp=$4, papel=$5, ativo=$6 WHERE id=$1`,
+      `UPDATE usuarios_v2 SET nome=$2, email=$3, whatsapp=$4, papel=$5, ativo=$6 WHERE id=$1`,
       [u.id, (nome||u.nome).trim(), emailL, (whatsapp!==undefined?whatsapp:u.whatsapp)||null, papel||u.papel, ativo!==undefined?ativo:u.ativo]
     );
     res.json({ ok: true });
@@ -497,22 +463,22 @@ app.post('/api/usuarios/:id/senha', exigirAdmin, async (req, res) => {
   try {
     const { senha } = req.body;
     if (!senha || senha.length < 4) return res.status(400).json({ error: 'A senha deve ter ao menos 4 caracteres' });
-    const u = (await pool.query(`SELECT * FROM usuarios WHERE id=$1`, [req.params.id])).rows[0];
+    const u = (await pool.query(`SELECT * FROM usuarios_v2 WHERE id=$1`, [req.params.id])).rows[0];
     if (!u) return res.status(404).json({ error: 'Usuário não encontrado' });
-    await pool.query(`UPDATE usuarios SET senha_hash=$2 WHERE id=$1`, [u.id, hashSenha(senha)]);
+    await pool.query(`UPDATE usuarios_v2 SET senha_hash=$2 WHERE id=$1`, [u.id, hashSenha(senha)]);
     res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
 app.delete('/api/usuarios/:id', exigirAdmin, async (req, res) => {
   try {
-    const u = (await pool.query(`SELECT * FROM usuarios WHERE id=$1`, [req.params.id])).rows[0];
+    const u = (await pool.query(`SELECT * FROM usuarios_v2 WHERE id=$1`, [req.params.id])).rows[0];
     if (!u) return res.status(404).json({ error: 'Usuário não encontrado' });
     if (u.papel === 'admin') {
-      const nAdmins = (await pool.query(`SELECT COUNT(*)::int AS n FROM usuarios WHERE papel='admin' AND ativo=TRUE`)).rows[0].n;
+      const nAdmins = (await pool.query(`SELECT COUNT(*)::int AS n FROM usuarios_v2 WHERE papel='admin' AND ativo=TRUE`)).rows[0].n;
       if (nAdmins <= 1) return res.status(400).json({ error: 'Não é possível excluir o último administrador' });
     }
-    await pool.query(`DELETE FROM usuarios WHERE id=$1`, [u.id]);
+    await pool.query(`DELETE FROM usuarios_v2 WHERE id=$1`, [u.id]);
     res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
