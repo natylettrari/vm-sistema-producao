@@ -318,7 +318,7 @@ app.get('/login', (req, res) => {
 <body><div class="box"><div class="logo">Vilma Mirian</div><div class="sub">Sistema de Produção</div>
 <div class="err" id="err">Email ou senha incorretos</div>
 <form onsubmit="entrar(event)">
-  <input type="email" id="email" placeholder="Email" autocomplete="username" required>
+  <input type="email" id="email" placeholder="Email" autocomplete="username">
   <input type="password" id="senha" placeholder="Senha" autocomplete="current-password" required>
   <button type="submit">Entrar</button>
 </form>
@@ -331,20 +331,44 @@ app.post('/login', async (req, res) => {
   try {
     const email = (req.body.email||'').toLowerCase().trim();
     const senha = req.body.senha||'';
-    // Compatibilidade: se mandar só "senha" (login antigo), aceita como admin inicial
-    if (!email && senha) {
-      if (senha !== SENHA) return res.status(401).json({ error: 'Senha incorreta' });
-      const adm = (await pool.query(`SELECT * FROM usuarios WHERE papel='admin' AND ativo=TRUE ORDER BY criado_em ASC LIMIT 1`)).rows[0];
-      if (!adm) return res.status(401).json({ error: 'Sem usuário admin' });
-      const sid = gerarSession(adm);
-      res.setHeader('Set-Cookie', `vm_session=${sid}; Path=/; HttpOnly; SameSite=Lax; Max-Age=86400`);
-      return res.json({ ok: true });
+
+    // 1) Tentativa normal: email + senha contra um usuário existente
+    if (email) {
+      const u = (await pool.query(`SELECT * FROM usuarios WHERE email=$1 AND ativo=TRUE`, [email])).rows[0];
+      if (u && verificarSenha(senha, u.senha_hash)) {
+        const sid = gerarSession(u);
+        res.setHeader('Set-Cookie', `vm_session=${sid}; Path=/; HttpOnly; SameSite=Lax; Max-Age=86400`);
+        return res.json({ ok: true });
+      }
     }
-    const u = (await pool.query(`SELECT * FROM usuarios WHERE email=$1 AND ativo=TRUE`, [email])).rows[0];
-    if (!u || !verificarSenha(senha, u.senha_hash)) return res.status(401).json({ error: 'Email ou senha incorretos' });
-    const sid = gerarSession(u);
-    res.setHeader('Set-Cookie', `vm_session=${sid}; Path=/; HttpOnly; SameSite=Lax; Max-Age=86400`);
-    res.json({ ok: true });
+
+    // 2) Senha-mestra (APP_PASSWORD): porta de emergência / bootstrap inicial
+    if (senha === SENHA) {
+      let adm = (await pool.query(`SELECT * FROM usuarios WHERE papel='admin' AND ativo=TRUE ORDER BY criado_em ASC LIMIT 1`)).rows[0];
+      // Se ainda não existe nenhum admin, cria um agora (auto-cura).
+      if (!adm) {
+        const emailAdmin = email || (process.env.ADMIN_EMAIL || 'admin@vilmamirian.com').toLowerCase();
+        const id = crypto.randomBytes(8).toString('hex');
+        try {
+          await pool.query(
+            `INSERT INTO usuarios(id, nome, email, whatsapp, senha_hash, papel, ativo)
+             VALUES($1,$2,$3,$4,$5,'admin',TRUE)`,
+            [id, 'Administrador', emailAdmin, null, hashSenha(SENHA), 'admin']
+          );
+        } catch(e) {
+          // Se falhar por email duplicado, busca o existente
+          console.error('bootstrap admin:', e.message);
+        }
+        adm = (await pool.query(`SELECT * FROM usuarios WHERE papel='admin' AND ativo=TRUE ORDER BY criado_em ASC LIMIT 1`)).rows[0];
+      }
+      if (adm) {
+        const sid = gerarSession(adm);
+        res.setHeader('Set-Cookie', `vm_session=${sid}; Path=/; HttpOnly; SameSite=Lax; Max-Age=86400`);
+        return res.json({ ok: true });
+      }
+    }
+
+    return res.status(401).json({ error: 'Email ou senha incorretos' });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
