@@ -71,6 +71,7 @@ tbody tr:hover td{background:var(--rose-ll)}
 .prioridade-row td{background:#fdf6f8!important}
 .prioridade-row:hover td{background:#f9ebef!important}
 .prio-badge{display:inline-block;font-size:9px;padding:1px 5px;border-radius:3px;background:#8A4C52;color:#fff;font-weight:600;letter-spacing:.04em;margin-left:3px}
+body.somente-leitura .edit-btn,body.somente-leitura .btn-rose,body.somente-leitura .btn-gold{display:none!important}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.7}}
 .sem-data-row td{color:var(--text3)!important}
 .draft-pill,.kit-pill,.lista-pill{display:inline-block;font-size:9px;padding:1px 5px;border-radius:3px;margin-left:2px;font-weight:500}
@@ -246,8 +247,10 @@ input[type=checkbox]{accent-color:var(--rose);cursor:pointer}
     <button class="nav-btn" onclick="showSec('minhas-listas',this)">Minhas Listas</button>
     <button class="nav-btn" onclick="showSec('alteracoes',this)" style="position:relative">Alterações<span id="badge-alteracoes" style="display:none;position:absolute;top:-2px;right:-2px;background:#c0392b;color:#fff;font-size:9px;min-width:16px;height:16px;border-radius:8px;padding:0 4px;line-height:16px;text-align:center">0</span></button>
     <button class="nav-btn" onclick="showSec('pronta-entrega',this)">Pronta Entrega</button>
+    <button class="nav-btn" id="nav-usuarios" onclick="showSec('usuarios',this)" style="display:none">Usuários</button>
   </div>
   <div style="display:flex;align-items:center;gap:8px">
+    <span id="usuario-logado" style="font-size:10px;color:var(--text3)"></span>
     <span style="font-size:10px;color:var(--text3);display:flex;align-items:center;gap:4px"><span style="width:6px;height:6px;border-radius:50%;background:#4caf7d;display:inline-block"></span>Shopify</span>
     <button class="btn btn-outline" onclick="syncTudo()">Sincronizar</button>
     <button class="btn btn-outline" style="color:#c0392b;border-color:#f5c6c2" onclick="if(confirm('Sair do sistema?'))fetch('/logout',{method:'POST'}).then(()=>location.href='/login')">Sair</button>
@@ -631,6 +634,20 @@ input[type=checkbox]{accent-color:var(--rose);cursor:pointer}
   </div>
 </div>
 
+<!-- USUÁRIOS -->
+<div id="sec-usuarios" class="section">
+  <div style="padding:20px 28px">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px">
+      <div>
+        <div style="font-family:var(--serif);font-style:italic;font-size:22px;color:var(--rose)">Usuários</div>
+        <div style="font-size:12px;color:var(--text3);margin-top:2px">Gerencie quem acessa o sistema e o que cada um pode fazer</div>
+      </div>
+      <button class="btn btn-rose" onclick="abrirFormUsuario()">+ Novo usuário</button>
+    </div>
+    <div id="usuarios-cont"><div class="loading"><span class="spin"></span>Carregando...</div></div>
+  </div>
+</div>
+
 <script>
 // ── Categorias ───────────────────────────────────────────────────────────────
 const BOLSAS = ['madison mini','madison','mala de rodinhas','madeleine','mochila 2 em 1','mochila mummy','louise mini','louise','bolsa cleo','bolsa cloé','bolsa cloe','bolsa liz','bolsa kate','frasqueira'];
@@ -662,12 +679,46 @@ const SC = {aguardando:'bw',em_producao:'bp',pronto:'bpronto',atrasado:'ba',pron
 const SL = {aguardando:'Aguardando',em_producao:'Em produção',pronto:'Pronto',atrasado:'Atrasado',pronta_entrega:'Pronta entrega',enviado:'Enviado'};
 
 document.addEventListener('DOMContentLoaded', () => {
+  carregarUsuarioLogado();
   carregarPedidos();
   carregarModelos();
   carregarVendedoras();
   carregarListas();
   verificarNovasAlteracoes();
 });
+
+// ── Usuário logado e permissões ───────────────────────────────────────────────
+let USUARIO = null; // { nome, email, papel, permissoes }
+
+async function carregarUsuarioLogado() {
+  try {
+    const r = await fetch('/api/me');
+    if (!r.ok) return;
+    USUARIO = await r.json();
+    aplicarPermissoes();
+  } catch(e) { /* silencioso */ }
+}
+
+function aplicarPermissoes() {
+  if (!USUARIO) return;
+  // Mostra a aba Usuários só para admin
+  const btnU = document.getElementById('nav-usuarios');
+  if (btnU) btnU.style.display = (USUARIO.papel === 'admin') ? '' : 'none';
+  // Mostra quem está logado
+  const info = document.getElementById('usuario-logado');
+  if (info) {
+    const labelPapel = (USUARIO.permissoes && USUARIO.permissoes.label) || USUARIO.papel;
+    info.textContent = USUARIO.nome + ' · ' + labelPapel;
+  }
+  // Se for somente leitura, esconde botões de ação (edição)
+  if (USUARIO.permissoes && USUARIO.permissoes.somenteLeitura) {
+    document.body.classList.add('somente-leitura');
+  }
+}
+
+function podeEditar() {
+  return !(USUARIO && USUARIO.permissoes && USUARIO.permissoes.somenteLeitura);
+}
 
 function showSec(n,btn) {
   document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
@@ -681,6 +732,7 @@ function showSec(n,btn) {
   if(n==='minhas-listas') renderMinhasListas();
   if(n==='alteracoes') carregarAlteracoes();
   if(n==='pronta-entrega') carregarPE();
+  if(n==='usuarios') carregarUsuarios();
 }
 
 function toast(msg) {
@@ -880,18 +932,25 @@ function renderTabela(pedidos) {
 
 
 function filtrar() {
-  const busca=(document.getElementById('f-busca')||{value:''}).value.toLowerCase().trim();
-  const mod=document.getElementById('f-mod').value.toLowerCase();
-  const col=document.getElementById('f-col').value.toLowerCase();
-  const vend=document.getElementById('f-vend').value.toLowerCase();
-  const st=document.getElementById('f-st').value;
-  const de=document.getElementById('f-de').value;
-  const ate=document.getElementById('f-ate').value;
+  const gv = id => { const e=document.getElementById(id); return e ? e.value : ''; };
+  const buscaRaw=(gv('f-busca')||'').toLowerCase().trim();
+  // Normaliza a busca: se a pessoa digitar número de pedido com #, espaços ou não, tudo bate
+  const busca = buscaRaw;
+  const buscaNum = buscaRaw.replace(/[^0-9]/g,''); // só os dígitos (ex: "#3676" -> "3676")
+  const mod=gv('f-mod').toLowerCase();
+  const col=gv('f-col').toLowerCase();
+  const vend=gv('f-vend').toLowerCase();
+  const st=gv('f-st');
+  const de=gv('f-de');
+  const ate=gv('f-ate');
   FILTRADOS=PEDIDOS.filter(p=>{
     // Busca geral — procura em todos os campos
     if(busca) {
       const campos=[p.numero,p.modeloBase,p.modelo,p.colecaoCor,p.bordado,p.vendedora,p.dataEnvio,p.obsCliente,p.orderId,p.cliente,p.email].map(x=>(x||'').toLowerCase());
-      if(!campos.some(c=>c.includes(busca))) return false;
+      const numeroLimpo=(p.numero||'').toLowerCase().replace(/[^0-9]/g,'');
+      const casaTexto = campos.some(c=>c.includes(busca));
+      const casaNumero = buscaNum && numeroLimpo.includes(buscaNum);
+      if(!casaTexto && !casaNumero) return false;
     }
     if(mod&&!(p.modeloBase||'').toLowerCase().includes(mod)&&!(p.modelo||'').toLowerCase().includes(mod)) return false;
     if(col&&!colecaoCombina(p.colecaoCor, col)) return false;
@@ -906,8 +965,8 @@ function filtrar() {
 }
 
 function limparF() {
-  ['f-mod','f-col','f-vend','f-st'].forEach(id=>document.getElementById(id).value='');
-  ['f-de','f-ate'].forEach(id=>document.getElementById(id).value='');
+  ['f-busca','f-mod','f-col','f-vend','f-st'].forEach(id=>{const e=document.getElementById(id); if(e) e.value='';});
+  ['f-de','f-ate'].forEach(id=>{const e=document.getElementById(id); if(e) e.value='';});
   FILTRADOS=[...PEDIDOS]; renderTabela(FILTRADOS);
 }
 
@@ -2117,6 +2176,199 @@ async function editarDataListaPE(id) {
     renderMinhasListas();
     if (typeof renderCal === 'function') renderCal();
     toast('✅ Data atualizada');
+  } catch(e) { toast('Erro: '+e.message); }
+}
+
+// ── Gestão de usuários ────────────────────────────────────────────────────────
+let USUARIOS = [];
+let PAPEIS_INFO = {};
+
+async function carregarUsuarios() {
+  const el = document.getElementById('usuarios-cont');
+  if (el) el.innerHTML = '<div class="loading"><span class="spin"></span>Carregando...</div>';
+  try {
+    const r = await fetch('/api/usuarios');
+    if (r.status === 403) { if(el) el.innerHTML = '<div class="loading">Apenas administradores podem ver os usuários.</div>'; return; }
+    const d = await r.json();
+    USUARIOS = d.usuarios || [];
+    PAPEIS_INFO = d.papeis || {};
+    renderUsuarios();
+  } catch(e) { if(el) el.innerHTML = `<div class="err">Erro: ${e.message}</div>`; }
+}
+
+function labelPapel(p) { return (PAPEIS_INFO[p] && PAPEIS_INFO[p].label) || p; }
+
+function renderUsuarios() {
+  const el = document.getElementById('usuarios-cont');
+  if (!el) return;
+  if (!USUARIOS.length) { el.innerHTML = '<div class="loading">Nenhum usuário cadastrado.</div>'; return; }
+  el.innerHTML = `
+    <div style="display:flex;flex-direction:column;gap:8px">
+      ${USUARIOS.map(u => `
+        <div style="background:var(--bg2);border:1px solid var(--border);border-radius:9px;padding:14px 18px;display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:10px;${u.ativo?'':'opacity:.55'}">
+          <div>
+            <div style="font-weight:600;font-size:14px">${u.nome} ${u.ativo?'':'<span style="font-size:10px;background:#f5e6e6;color:#c0392b;padding:1px 7px;border-radius:4px;margin-left:4px">Inativo</span>'}</div>
+            <div style="font-size:12px;color:var(--text2);margin-top:2px">${u.email}${u.whatsapp?' · '+u.whatsapp:''}</div>
+            <div style="font-size:11px;color:var(--rose);margin-top:3px">${labelPapel(u.papel)}</div>
+          </div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            <button class="btn btn-outline btn-sm" onclick="abrirEditarUsuario('${u.id}')">Editar</button>
+            <button class="btn btn-outline btn-sm" onclick="abrirResetSenha('${u.id}')">Redefinir senha</button>
+            <button class="btn btn-outline btn-sm" style="color:#c0392b;border-color:#f5c6c2" onclick="excluirUsuario('${u.id}')">Excluir</button>
+          </div>
+        </div>`).join('')}
+    </div>`;
+}
+
+function opcoesPapel(sel) {
+  return Object.entries(PAPEIS_INFO).map(([k,v]) => `<option value="${k}" ${sel===k?'selected':''}>${v.label}</option>`).join('')
+    || `<option value="leitura">Somente leitura</option><option value="edicao">Edição</option><option value="vendedora">Vendedora</option><option value="producao">Produção</option><option value="admin">Administrador</option>`;
+}
+
+function abrirFormUsuario() {
+  const modal = document.createElement('div');
+  modal.className = 'cal-modal';
+  modal.id = 'modal-usuario';
+  modal.innerHTML = `
+    <div class="cal-modal-box" style="max-width:460px;width:95vw">
+      <div style="font-family:var(--serif);font-style:italic;font-size:19px;color:var(--rose);margin-bottom:14px">Novo usuário</div>
+      <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:14px">
+        <div><label style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);display:block;margin-bottom:4px">Nome *</label>
+          <input id="u-nome" placeholder="Nome completo" style="width:100%;font-size:13px;padding:8px 11px;border-radius:7px;border:1px solid var(--border2);background:var(--bg2)"></div>
+        <div><label style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);display:block;margin-bottom:4px">Email *</label>
+          <input id="u-email" type="email" placeholder="email@exemplo.com" style="width:100%;font-size:13px;padding:8px 11px;border-radius:7px;border:1px solid var(--border2);background:var(--bg2)"></div>
+        <div><label style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);display:block;margin-bottom:4px">WhatsApp</label>
+          <input id="u-whats" placeholder="(00) 00000-0000" style="width:100%;font-size:13px;padding:8px 11px;border-radius:7px;border:1px solid var(--border2);background:var(--bg2)"></div>
+        <div><label style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);display:block;margin-bottom:4px">Senha inicial *</label>
+          <input id="u-senha" placeholder="Senha de acesso" style="width:100%;font-size:13px;padding:8px 11px;border-radius:7px;border:1px solid var(--border2);background:var(--bg2)"></div>
+        <div><label style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);display:block;margin-bottom:4px">Permissão</label>
+          <select id="u-papel" style="width:100%;font-size:13px;padding:8px 11px;border-radius:7px;border:1px solid var(--border2);background:var(--bg2)">${opcoesPapel('leitura')}</select></div>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn btn-outline" onclick="fecharModalUsuario()">Cancelar</button>
+        <button class="btn btn-rose" onclick="salvarUsuario()">Criar usuário</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  modal.addEventListener('click', e => { if(e.target===modal) fecharModalUsuario(); });
+}
+
+function fecharModalUsuario() { const m=document.getElementById('modal-usuario'); if(m) m.remove(); }
+
+async function salvarUsuario() {
+  const body = {
+    nome: document.getElementById('u-nome').value.trim(),
+    email: document.getElementById('u-email').value.trim(),
+    whatsapp: document.getElementById('u-whats').value.trim(),
+    senha: document.getElementById('u-senha').value,
+    papel: document.getElementById('u-papel').value,
+  };
+  if (!body.nome || !body.email || !body.senha) { toast('Preencha nome, email e senha'); return; }
+  try {
+    const r = await fetch('/api/usuarios', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error||'Erro ao criar');
+    fecharModalUsuario();
+    toast('✅ Usuário criado');
+    carregarUsuarios();
+  } catch(e) { toast('Erro: '+e.message); }
+}
+
+function abrirEditarUsuario(id) {
+  const u = USUARIOS.find(x => x.id === id);
+  if (!u) return;
+  const modal = document.createElement('div');
+  modal.className = 'cal-modal';
+  modal.id = 'modal-usuario-edit';
+  modal.innerHTML = `
+    <div class="cal-modal-box" style="max-width:460px;width:95vw">
+      <div style="font-family:var(--serif);font-style:italic;font-size:19px;color:var(--rose);margin-bottom:14px">Editar usuário</div>
+      <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:14px">
+        <div><label style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);display:block;margin-bottom:4px">Nome</label>
+          <input id="ue-nome" value="${(u.nome||'').replace(/"/g,'&quot;')}" style="width:100%;font-size:13px;padding:8px 11px;border-radius:7px;border:1px solid var(--border2);background:var(--bg2)"></div>
+        <div><label style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);display:block;margin-bottom:4px">Email</label>
+          <input id="ue-email" type="email" value="${(u.email||'').replace(/"/g,'&quot;')}" style="width:100%;font-size:13px;padding:8px 11px;border-radius:7px;border:1px solid var(--border2);background:var(--bg2)"></div>
+        <div><label style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);display:block;margin-bottom:4px">WhatsApp</label>
+          <input id="ue-whats" value="${(u.whatsapp||'').replace(/"/g,'&quot;')}" style="width:100%;font-size:13px;padding:8px 11px;border-radius:7px;border:1px solid var(--border2);background:var(--bg2)"></div>
+        <div><label style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);display:block;margin-bottom:4px">Permissão</label>
+          <select id="ue-papel" style="width:100%;font-size:13px;padding:8px 11px;border-radius:7px;border:1px solid var(--border2);background:var(--bg2)">${opcoesPapel(u.papel)}</select></div>
+        <div><label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px"><input type="checkbox" id="ue-ativo" ${u.ativo?'checked':''}> Usuário ativo (pode entrar)</label></div>
+      </div>
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn btn-outline" onclick="fecharEditarUsuario()">Cancelar</button>
+        <button class="btn btn-rose" onclick="salvarEditarUsuario('${u.id}')">Salvar</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  modal.addEventListener('click', e => { if(e.target===modal) fecharEditarUsuario(); });
+}
+
+function fecharEditarUsuario() { const m=document.getElementById('modal-usuario-edit'); if(m) m.remove(); }
+
+async function salvarEditarUsuario(id) {
+  const body = {
+    nome: document.getElementById('ue-nome').value.trim(),
+    email: document.getElementById('ue-email').value.trim(),
+    whatsapp: document.getElementById('ue-whats').value.trim(),
+    papel: document.getElementById('ue-papel').value,
+    ativo: document.getElementById('ue-ativo').checked,
+  };
+  try {
+    const r = await fetch('/api/usuarios/'+id, {method:'PUT',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error||'Erro ao salvar');
+    fecharEditarUsuario();
+    toast('✅ Usuário atualizado');
+    carregarUsuarios();
+  } catch(e) { toast('Erro: '+e.message); }
+}
+
+function abrirResetSenha(id) {
+  const u = USUARIOS.find(x => x.id === id);
+  if (!u) return;
+  const modal = document.createElement('div');
+  modal.className = 'cal-modal';
+  modal.id = 'modal-reset';
+  modal.innerHTML = `
+    <div class="cal-modal-box" style="max-width:400px;width:95vw">
+      <div style="font-family:var(--serif);font-style:italic;font-size:19px;color:var(--rose);margin-bottom:6px">Redefinir senha</div>
+      <div style="font-size:13px;color:var(--text2);margin-bottom:14px">${u.nome} · ${u.email}</div>
+      <label style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);display:block;margin-bottom:4px">Nova senha</label>
+      <input id="rs-senha" placeholder="Nova senha" style="width:100%;font-size:13px;padding:8px 11px;border-radius:7px;border:1px solid var(--border2);background:var(--bg2);margin-bottom:8px">
+      ${u.whatsapp?`<div style="font-size:11px;color:var(--text3);margin-bottom:14px">💡 Depois de redefinir, você pode avisar ${u.nome} pelo WhatsApp ${u.whatsapp}.</div>`:'<div style="font-size:11px;color:var(--text3);margin-bottom:14px">Avise a pessoa da nova senha.</div>'}
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn btn-outline" onclick="fecharReset()">Cancelar</button>
+        <button class="btn btn-rose" onclick="confirmarReset('${u.id}')">Redefinir</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  modal.addEventListener('click', e => { if(e.target===modal) fecharReset(); });
+}
+
+function fecharReset() { const m=document.getElementById('modal-reset'); if(m) m.remove(); }
+
+async function confirmarReset(id) {
+  const senha = document.getElementById('rs-senha').value;
+  if (!senha || senha.length < 4) { toast('A senha deve ter ao menos 4 caracteres'); return; }
+  try {
+    const r = await fetch('/api/usuarios/'+id+'/senha', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({senha})});
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error||'Erro');
+    fecharReset();
+    toast('✅ Senha redefinida');
+  } catch(e) { toast('Erro: '+e.message); }
+}
+
+async function excluirUsuario(id) {
+  const u = USUARIOS.find(x => x.id === id);
+  if (!u) return;
+  if (!confirm('Excluir o usuário '+u.nome+'?')) return;
+  try {
+    const r = await fetch('/api/usuarios/'+id, {method:'DELETE'});
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error||'Erro');
+    toast('Usuário excluído');
+    carregarUsuarios();
   } catch(e) { toast('Erro: '+e.message); }
 }
 
