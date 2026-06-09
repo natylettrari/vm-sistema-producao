@@ -17,6 +17,9 @@ const APP_URL = process.env.APP_URL || 'https://producao.vilmamirian.com';
 const SCOPES = 'read_orders,read_draft_orders,read_products';
 const SENHA = process.env.APP_PASSWORD || 'vilmamirian2025';
 const CAPACIDADE_DIARIA = 35;
+// Token da integração com o sistema de estoque. Definido SOMENTE via variável de
+// ambiente (no Railway) — sem valor padrão no código, para o segredo não vazar pelo repositório.
+const ESTOQUE_TOKEN = process.env.ESTOQUE_TOKEN || null;
 
 // ── Senhas (hash seguro com scrypt nativo) ────────────────────────────────────
 function hashSenha(senha) {
@@ -301,6 +304,8 @@ function exigirAdmin(req, res, next) {
 
 function authMiddleware(req, res, next) {
   if (req.path === '/login' || req.path === '/auth' || req.path === '/auth/callback') return next();
+  // Rota de integração com o estoque: autenticada por token próprio (Bearer), não por sessão
+  if (req.path === '/api/listas-estoque') return next();
   if (!validarSession(req)) {
     // Para chamadas de API responde 401; para páginas redireciona ao login
     if (req.path.startsWith('/api/')) return res.status(401).json({ error: 'Sessão expirada' });
@@ -1041,6 +1046,103 @@ app.get('/api/painel-bordado', async (req,res) => {
 });
 
 app.get('/api/listas', async (req,res) => { res.json({listas:await loadListas()}); });
+
+// ── Integração com o sistema de estoque ───────────────────────────────────────
+// Autenticada por token fixo no header: Authorization: Bearer <ESTOQUE_TOKEN>
+// Retorna as listas em produção com itens agrupados por modelo+cor.
+app.get('/api/listas-estoque', async (req, res) => {
+  try {
+    // 1) Autenticação por token (Bearer)
+    if (!ESTOQUE_TOKEN) {
+      return res.status(503).json({ error: 'Integração de estoque não configurada (defina ESTOQUE_TOKEN no ambiente)' });
+    }
+    const auth = req.headers.authorization || '';
+    const m = auth.match(/^Bearer\s+(.+)$/i);
+    const tokenRecebido = m ? m[1].trim() : '';
+    // Comparação em tempo constante para evitar ataques de temporização
+    const a = Buffer.from(tokenRecebido);
+    const b = Buffer.from(ESTOQUE_TOKEN);
+    const tokenOk = a.length === b.length && crypto.timingSafeEqual(a, b);
+    if (!tokenOk) return res.status(401).json({ error: 'Token inválido' });
+
+    // 2) Carrega listas em produção
+    const todas = await loadListas();
+    const emProducao = todas.filter(l => (l.status || 'em_producao') === 'em_producao');
+
+    // 3) Garante o cache de pedidos para cruzar itemId -> modelo/cor
+    let pedidos = CACHE_PEDIDOS;
+    if (!pedidos || !pedidos.length) {
+      try {
+        const token = await loadToken();
+        if (token) { pedidos = await getPedidos(token); }
+      } catch(e) { pedidos = CACHE_PEDIDOS || []; }
+    }
+    const porItemId = {};
+    (pedidos || []).forEach(p => { if (p && p.itemId != null) porItemId[String(p.itemId)] = p; });
+
+    // 4) Monta cada lista com itens agrupados por modeloBase + colecaoCor
+    const listas = emProducao.map(l => {
+      const grupos = {}; // chave "modelo||cor" -> quantidade
+      const ids = Array.isArray(l.pedidoIds) ? l.pedidoIds : [];
+      ids.forEach(itemId => {
+        const ped = porItemId[String(itemId)];
+        let modeloBase, colecaoCor;
+        if (ped) {
+          modeloBase = ped.modeloBase || ped.modelo || 'Sem modelo';
+          colecaoCor = ped.colecaoCor || 'Sem cor';
+        } else {
+          // Sem pedido vinculado no cache: usa o que houver em modelos da lista
+          modeloBase = 'Sem modelo';
+          colecaoCor = 'Sem cor';
+        }
+        const chave = modeloBase + '||' + colecaoCor;
+        grupos[chave] = (grupos[chave] || 0) + 1;
+      });
+
+      // Se não conseguiu cruzar nenhum item (cache vazio), tenta usar o campo "modelos" da lista
+      let itens = Object.entries(grupos).map(([chave, quantidade]) => {
+        const [modeloBase, colecaoCor] = chave.split('||');
+        return { modeloBase, colecaoCor, quantidade };
+      });
+      if (!itens.length && Array.isArray(l.modelos) && l.modelos.length) {
+        // l.modelos pode ser uma lista de strings "Modelo · Cor" ou objetos
+        const g2 = {};
+        l.modelos.forEach(mItem => {
+          let modeloBase = 'Sem modelo', colecaoCor = 'Sem cor';
+          if (typeof mItem === 'string') {
+            const partes = mItem.split('·').map(s => s.trim());
+            modeloBase = partes[0] || 'Sem modelo';
+            colecaoCor = partes[1] || 'Sem cor';
+          } else if (mItem && typeof mItem === 'object') {
+            modeloBase = mItem.modeloBase || mItem.modelo || 'Sem modelo';
+            colecaoCor = mItem.colecaoCor || mItem.cor || 'Sem cor';
+          }
+          const chave = modeloBase + '||' + colecaoCor;
+          g2[chave] = (g2[chave] || 0) + 1;
+        });
+        itens = Object.entries(g2).map(([chave, quantidade]) => {
+          const [modeloBase, colecaoCor] = chave.split('||');
+          return { modeloBase, colecaoCor, quantidade };
+        });
+      }
+
+      return {
+        id: l.id,
+        numero: l.numero,
+        nome: l.nome || ('Lista #' + l.numero),
+        dataEnvio: l.dataEnvio || null,
+        dataProducao: l.dataProducao || null,
+        totalPecas: l.totalPecas || ids.length,
+        status: l.status || 'em_producao',
+        itens,
+      };
+    });
+
+    res.json({ listas });
+  } catch(e) {
+    res.status(500).json({ error: e.message });
+  }
+});
 
 app.post('/api/listas', exigirEdicao, async (req,res) => {
   const { nome, pedidoIds, dataEnvio, totalPecas, modelos } = req.body;
