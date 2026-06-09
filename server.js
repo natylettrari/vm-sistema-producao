@@ -50,6 +50,18 @@ const pool = new Pool({
 });
 
 async function initDB() {
+  // Conserto de schema: se a tabela usuarios já existe com id no formato errado
+  // (número em vez de texto), recria limpa. Só afeta a tabela de usuários.
+  try {
+    const col = await pool.query(
+      `SELECT data_type FROM information_schema.columns WHERE table_name='usuarios' AND column_name='id'`
+    );
+    if (col.rows.length && col.rows[0].data_type !== 'text') {
+      await pool.query(`DROP TABLE IF EXISTS usuarios`);
+      console.log('Tabela usuarios recriada (corrigido formato do id)');
+    }
+  } catch(e) { console.error('checar schema usuarios:', e.message); }
+
   await pool.query(`
     CREATE TABLE IF NOT EXISTS configuracoes (
       chave TEXT PRIMARY KEY,
