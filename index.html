@@ -495,6 +495,18 @@ input[type=checkbox]{accent-color:var(--rose);cursor:pointer}
       <div class="sb-div"></div>
 
       <div class="sb-s">
+        <div class="sb-ttl">Período de envio (vários lotes)</div>
+        <div style="display:flex;gap:6px;align-items:center">
+          <input type="date" id="ficha-de" onchange="carregarFicha()" style="flex:1;font-size:11px;padding:5px 7px;border-radius:7px;border:1px solid var(--border2);background:var(--bg2);color:var(--text)">
+          <span style="font-size:11px;color:var(--text3)">até</span>
+          <input type="date" id="ficha-ate" onchange="carregarFicha()" style="flex:1;font-size:11px;padding:5px 7px;border-radius:7px;border:1px solid var(--border2);background:var(--bg2);color:var(--text)">
+        </div>
+        <div style="font-size:10px;color:var(--text3);margin-top:4px;line-height:1.4">Pega todos os envios no período (junta vários lotes). Funciona junto com o filtro de lote acima.</div>
+      </div>
+
+      <div class="sb-div"></div>
+
+      <div class="sb-s">
         <div class="sb-ttl">Modelo</div>
         <div style="position:relative">
           <input type="text" id="ficha-modelo-input" placeholder="Ex: Madison"
@@ -3471,6 +3483,25 @@ async function carregarFicha() {
     });
   }
 
+  // Filtro por período de envio (De/Até) — pega vários lotes de uma vez
+  const fDe = (document.getElementById('ficha-de')||{value:''}).value;   // formato yyyy-mm-dd
+  const fAte = (document.getElementById('ficha-ate')||{value:''}).value;
+  if (fDe || fAte) {
+    const limDe = fDe ? new Date(fDe + 'T00:00:00') : null;
+    const limAte = fAte ? new Date(fAte + 'T23:59:59') : null;
+    peds = peds.filter(p => {
+      if (!p.dataEnvio || p.dataEnvio === '—') return false;
+      const pts = p.dataEnvio.split('/');
+      if (pts.length < 2) return false;
+      const ano = pts[2] || String(new Date().getFullYear());
+      const d = new Date(`${ano}-${pts[1].padStart(2,'0')}-${pts[0].padStart(2,'0')}T12:00:00`);
+      if (isNaN(d)) return false;
+      if (limDe && d < limDe) return false;
+      if (limAte && d > limAte) return false;
+      return true;
+    });
+  }
+
   // Filtro por modelos
   if (FICHA_MODELOS.length) peds = peds.filter(p => FICHA_MODELOS.some(m => (p.modeloBase||'').toLowerCase().includes(m.toLowerCase())));
 
@@ -3489,7 +3520,7 @@ async function carregarFicha() {
   if (incluirPE) {
     (LISTAS_PE||[]).forEach(l => (l.pecas||[]).forEach(pc => {
       if (pc.vendida) return;
-      const modeloBase = extrairModeloBase ? extrairModeloBase(pc.modelo||l.modelo||'') : (pc.modelo||l.modelo||'');
+      const modeloBase = (typeof extrairModeloBase === 'function') ? extrairModeloBase(pc.modelo||l.modelo||'') : (pc.modelo||l.modelo||'');
       pecasPE.push({
         modeloBase: modeloBase || (pc.modelo||l.modelo),
         colecaoCor: pc.colecao_cor || 'Sem cor',
@@ -3500,7 +3531,7 @@ async function carregarFicha() {
     // Aplica os mesmos filtros da ficha às peças PE
     if (FICHA_MODELOS.length) pecasPE = pecasPE.filter(p => FICHA_MODELOS.some(m => (p.modeloBase||'').toLowerCase().includes(m.toLowerCase())));
     if (FICHA_TIPO !== 'todos') pecasPE = pecasPE.filter(p => getTipo(p.modeloBase) === FICHA_TIPO);
-    if (FICHA_LOTE) pecasPE = []; // PE não tem lote de envio de pedido; quando filtra por lote, não entra
+    if (FICHA_LOTE || fDe || fAte) pecasPE = []; // PE não tem data de envio de pedido; quando filtra por lote/período, não entra
     if (colecao) pecasPE = pecasPE.filter(p => colecaoCombina(p.colecaoCor, colecao));
   }
 
@@ -3567,7 +3598,9 @@ async function carregarFicha() {
 
   const tot = grupos.reduce((s,g)=>s+g.total,0);
   const totPE = pecasPE.length;
-  const tituloFiltro = [FICHA_LOTE?'Lote '+FICHA_LOTE:'', FICHA_MODELOS.join(', '), FICHA_TIPO!=='todos'?(FICHA_TIPO==='bolsa'?'Bolsas':'Acessórios'):''].filter(Boolean).join(' · ') || 'Todos os pedidos';
+  const fmtBR = s => { if(!s) return ''; const p=s.split('-'); return p[2]+'/'+p[1]+'/'+p[0]; };
+  const periodoLabel = (fDe||fAte) ? ('Período ' + (fDe?fmtBR(fDe):'…') + ' a ' + (fAte?fmtBR(fAte):'…')) : '';
+  const tituloFiltro = [FICHA_LOTE?'Lote '+FICHA_LOTE:'', periodoLabel, FICHA_MODELOS.join(', '), FICHA_TIPO!=='todos'?(FICHA_TIPO==='bolsa'?'Bolsas':'Acessórios'):''].filter(Boolean).join(' · ') || 'Todos os pedidos';
 
   // Identifica quais listas entram neste corte (produção normais + pronta entrega)
   const listasNorm = [...new Set(peds.map(p => p.listaNumero).filter(Boolean))].sort();
