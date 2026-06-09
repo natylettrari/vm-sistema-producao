@@ -523,6 +523,16 @@ input[type=checkbox]{accent-color:var(--rose);cursor:pointer}
       </div>
 
       <div class="sb-div"></div>
+
+      <div class="sb-s">
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:12px;color:var(--text2)">
+          <input type="checkbox" id="ficha-incluir-pe" checked onchange="carregarFicha()" style="cursor:pointer">
+          Incluir peças de pronta entrega
+        </label>
+        <div style="font-size:10px;color:var(--text3);margin-top:4px;line-height:1.4">As peças de PE disponíveis entram no corte, marcadas com o número da lista.</div>
+      </div>
+
+      <div class="sb-div"></div>
       <button class="btn btn-rose" style="width:100%;padding:8px;margin-bottom:6px" onclick="carregarFicha()">Gerar ficha</button>
       <button class="btn btn-outline" style="width:100%;padding:7px" onclick="limparFichaFiltros()">Limpar filtros</button>
     </div>
@@ -612,7 +622,10 @@ input[type=checkbox]{accent-color:var(--rose);cursor:pointer}
         <div style="font-family:var(--serif);font-style:italic;font-size:22px;color:var(--rose)">Pronta Entrega</div>
         <div style="font-size:12px;color:var(--text3);margin-top:2px">Estoque de peças produzidas — busque e registre vendas</div>
       </div>
-      <button class="btn btn-rose" onclick="abrirFormPE()">+ Nova lista PE</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-outline" onclick="abrirAddPecaUnificado()">+ Adicionar peça</button>
+        <button class="btn btn-rose" onclick="abrirFormPE()">+ Nova lista PE</button>
+      </div>
     </div>
     <div id="pe-cont"><div class="loading"><span class="spin"></span>Carregando...</div></div>
   </div>
@@ -1616,9 +1629,10 @@ function renderListasPE() {
           </div>
         </div>
         ${pecas.length ? `<div style="margin-top:10px;display:flex;flex-direction:column;gap:5px">
-          ${pecas.map(p => `
+          ${pecas.map((p,pi) => `
             <div style="display:flex;justify-content:space-between;align-items:center;background:var(--bg2);border-radius:6px;padding:6px 11px;${p.vendida?'opacity:.6':''}">
               <div style="font-size:12px">
+                <span style="color:var(--text3);min-width:20px;display:inline-block">${pi+1}.</span>
                 <span style="font-weight:500">${p.colecao_cor||'(sem cor)'}</span>
                 ${p.bordado?`<span style="color:var(--rose);margin-left:6px">${p.bordado}</span>`:''}
                 ${p.vendida?`<span style="color:#1e6640;margin-left:6px">✓ ${p.numero_pedido||''} ${p.vendedora||''}</span>`:''}
@@ -1696,6 +1710,115 @@ async function excluirListaPE(id) {
     toast('Lista PE excluída');
     carregarPE();
     if (typeof carregarListas === 'function') carregarListas();
+  } catch(e) { toast('Erro: '+e.message); }
+}
+
+// Fluxo unificado: adicionar peça escolhendo lista existente ou criando nova
+function abrirAddPecaUnificado() {
+  const listas = LISTAS_PE || [];
+  const opcoesListas = listas.map(l => `<option value="${l.id}">PE #${l.numero} · ${l.modelo} (${(l.pecas||[]).length} peças)</option>`).join('');
+  const modal = document.createElement('div');
+  modal.className = 'cal-modal';
+  modal.id = 'modal-add-uni';
+  modal.innerHTML = `
+    <div class="cal-modal-box" style="max-width:480px;width:95vw">
+      <div style="font-family:var(--serif);font-style:italic;font-size:19px;color:var(--rose);margin-bottom:14px">Adicionar peça</div>
+      <div style="display:flex;gap:8px;margin-bottom:14px">
+        <button id="au-tab-exist" class="btn btn-rose btn-sm" onclick="auTab('exist')" ${listas.length?'':'disabled style=opacity:.5'}>Em lista existente</button>
+        <button id="au-tab-nova" class="btn btn-outline btn-sm" onclick="auTab('nova')">Em lista nova</button>
+      </div>
+
+      <div id="au-bloco-exist" style="${listas.length?'':'display:none'}">
+        <label style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);display:block;margin-bottom:4px">Escolha a lista</label>
+        <select id="au-lista" style="width:100%;font-size:13px;padding:8px 11px;border-radius:7px;border:1px solid var(--border2);background:var(--bg2);margin-bottom:6px">${opcoesListas}</select>
+      </div>
+
+      <div id="au-bloco-nova" style="display:none">
+        <label style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);display:block;margin-bottom:4px">Modelo da nova lista *</label>
+        <input id="au-novo-modelo" placeholder="Ex: Madeleine" style="width:100%;font-size:13px;padding:8px 11px;border-radius:7px;border:1px solid var(--border2);background:var(--bg2);margin-bottom:6px">
+        <label style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);display:block;margin-bottom:4px">Data de envio (opcional)</label>
+        <input id="au-novo-data" placeholder="Ex: 30/06/2026" style="width:100%;font-size:13px;padding:8px 11px;border-radius:7px;border:1px solid var(--border2);background:var(--bg2);margin-bottom:6px">
+      </div>
+
+      <div style="border-top:1px solid var(--border);margin:12px 0;padding-top:12px">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);margin-bottom:8px">Dados da peça</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+          <div><input id="au-cor" placeholder="Cor / Coleção" style="width:100%;font-size:13px;padding:8px 11px;border-radius:7px;border:1px solid var(--border2);background:var(--bg2)"></div>
+          <div><input id="au-bordado" placeholder="Bordado (opcional)" style="width:100%;font-size:13px;padding:8px 11px;border-radius:7px;border:1px solid var(--border2);background:var(--bg2)"></div>
+          <div><input id="au-pedido" placeholder="Nº pedido (em branco até vender)" style="width:100%;font-size:13px;padding:8px 11px;border-radius:7px;border:1px solid var(--border2);background:var(--bg2)"></div>
+          <div><input id="au-vendedora" placeholder="Vendedora (em branco até vender)" style="width:100%;font-size:13px;padding:8px 11px;border-radius:7px;border:1px solid var(--border2);background:var(--bg2)"></div>
+          <div style="grid-column:1/3"><input id="au-obs" placeholder="Observação (opcional)" style="width:100%;font-size:13px;padding:8px 11px;border-radius:7px;border:1px solid var(--border2);background:var(--bg2)"></div>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:8px;justify-content:flex-end">
+        <button class="btn btn-outline" onclick="fecharAddUni()">Cancelar</button>
+        <button class="btn btn-rose" onclick="salvarAddUni(true)">Adicionar e continuar</button>
+        <button class="btn btn-rose" onclick="salvarAddUni(false)">Adicionar</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  modal.addEventListener('click', e => { if(e.target===modal) fecharAddUni(); });
+  // Estado inicial: se há listas, começa em "existente"; senão "nova"
+  AU_MODO = listas.length ? 'exist' : 'nova';
+  auTab(AU_MODO);
+}
+
+let AU_MODO = 'exist';
+function auTab(modo) {
+  AU_MODO = modo;
+  const be = document.getElementById('au-bloco-exist');
+  const bn = document.getElementById('au-bloco-nova');
+  const te = document.getElementById('au-tab-exist');
+  const tn = document.getElementById('au-tab-nova');
+  if (be) be.style.display = modo==='exist' ? 'block':'none';
+  if (bn) bn.style.display = modo==='nova' ? 'block':'none';
+  if (te) { te.className = 'btn btn-sm '+(modo==='exist'?'btn-rose':'btn-outline'); }
+  if (tn) { tn.className = 'btn btn-sm '+(modo==='nova'?'btn-rose':'btn-outline'); }
+}
+function fecharAddUni() { const m=document.getElementById('modal-add-uni'); if(m) m.remove(); }
+
+async function salvarAddUni(continuar) {
+  const corpoPeca = {
+    colecaoCor: document.getElementById('au-cor').value.trim(),
+    bordado: document.getElementById('au-bordado').value.trim(),
+    numeroPedido: document.getElementById('au-pedido').value.trim(),
+    vendedora: document.getElementById('au-vendedora').value.trim(),
+    obs: document.getElementById('au-obs').value.trim(),
+  };
+  try {
+    let listaId;
+    if (AU_MODO === 'nova') {
+      const modelo = document.getElementById('au-novo-modelo').value.trim();
+      if (!modelo) { toast('Informe o modelo da nova lista'); return; }
+      const dataEnvio = document.getElementById('au-novo-data').value.trim();
+      const r = await fetch('/api/listas-pe', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({modelo, dataEnvio})});
+      if (!r.ok) throw new Error('Erro ao criar lista');
+      const d = await r.json();
+      listaId = d.id;
+    } else {
+      listaId = document.getElementById('au-lista').value;
+      if (!listaId) { toast('Escolha uma lista'); return; }
+    }
+    const rp = await fetch('/api/listas-pe/'+listaId+'/pecas', {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(corpoPeca)});
+    if (!rp.ok) throw new Error('Erro ao adicionar peça');
+    toast('✅ Peça adicionada');
+    await carregarPE();
+    if (typeof carregarListas === 'function') carregarListas();
+    if (continuar) {
+      // Limpa só os campos da peça; mantém a lista escolhida. Se era "nova", passa a "existente" na lista recém-criada.
+      ['au-cor','au-bordado','au-pedido','au-vendedora','au-obs'].forEach(id=>{const e=document.getElementById(id); if(e) e.value='';});
+      if (AU_MODO === 'nova') {
+        // Recria o select com a nova lista já selecionada seria complexo; fecha e reabre no modo existente
+        fecharAddUni();
+        abrirAddPecaUnificado();
+        setTimeout(()=>{ auTab('exist'); const sel=document.getElementById('au-lista'); if(sel) sel.value=listaId; }, 30);
+      } else {
+        const c=document.getElementById('au-cor'); if(c) c.focus();
+      }
+    } else {
+      fecharAddUni();
+    }
   } catch(e) { toast('Erro: '+e.message); }
 }
 
@@ -1910,8 +2033,10 @@ function imprimirListaPE(id) {
   const comBord = pecas.filter(p => p.bordado).length;
   const dataCriada = l.criada_em ? new Date(l.criada_em).toLocaleDateString('pt-BR') : new Date().toLocaleDateString('pt-BR');
 
+  let _nlpe = 0;
   const linhas = pecas.map(p => `
     <tr${p.vendida?' style="opacity:.55"':''}>
+      <td style="text-align:center;color:#999">${++_nlpe}</td>
       <td>${p.colecao_cor||''}</td>
       <td>${p.bordado||'Sem bordado'}</td>
       <td>${p.obs||''}</td>
@@ -1944,7 +2069,7 @@ function imprimirListaPE(id) {
       </div>
       <div class="grupo-hd">${l.modelo} — ${pecas.length} peça${pecas.length>1?'s':''}</div>
       <table>
-        <thead><tr><th>Cor / Coleção</th><th>Bordado</th><th>Observação</th><th>Situação</th></tr></thead>
+        <thead><tr><th style="width:28px">Nº</th><th>Cor / Coleção</th><th>Bordado</th><th>Observação</th><th>Situação</th></tr></thead>
         <tbody>${linhas}</tbody>
       </table>
       <script>window.onload=function(){setTimeout(function(){window.print();},200);};<\/script>
@@ -2016,9 +2141,11 @@ async function imprimirLista(id) {
   const nomeLimpo = l.nome.replace(/Lista #\d+ — /,'');
   const dataCriada = l.criadaEm ? new Date(l.criadaEm).toLocaleDateString('pt-BR') : new Date().toLocaleDateString('pt-BR');
 
+  let _nl = 0; // contador de linha contínuo dentro desta lista (zera a cada lista)
   const gruposHtml = Object.entries(grupos).map(([nome, items]) => {
     const linhas = items.map(p => `
       <tr>
+        <td style="text-align:center;color:#999">${++_nl}</td>
         <td>${(p.numero||'').replace('#','')}</td>
         <td>${p.modeloBase||''}</td>
         <td>${p.colecaoCor||''}</td>
@@ -2031,7 +2158,7 @@ async function imprimirLista(id) {
         <div class="grupo-hd">${nome} — ${items.length} peça${items.length>1?'s':''}</div>
         <table>
           <thead><tr>
-            <th>Pedido</th><th>Modelo</th><th>Cor / Coleção</th>
+            <th style="width:28px">Nº</th><th>Pedido</th><th>Modelo</th><th>Cor / Coleção</th>
             <th>Bordado</th><th>Vendedora</th><th>Envio</th>
           </tr></thead>
           <tbody>${linhas}</tbody>
@@ -2975,10 +3102,12 @@ function renderListaSalva(peds, grupos, lista) {
   const feito = prod + pronto;
   const pct = peds.length ? Math.round(feito/peds.length*100) : 0;
 
+  let _nls = 0; // numeração contínua na lista inteira (zera a cada lista)
   const gruposHtml = Object.entries(grupos).map(([nome, items], gi) => {
     const cor = getCM(nome);
     const rows = items.map(p => `<tr class="${p.isUrgente?'urgente-row':''}">
       <td style="width:26px"><input type="checkbox" class="lrcb" data-id="${p.itemId}"></td>
+      <td style="width:30px;text-align:center;font-size:11px;color:var(--text3)">${++_nls}</td>
       <td style="width:65px" class="num">${p.numero}${p.isKitItem?'<span class="kit-pill">K</span>':''}${p.isUrgente?'<span class="urgente-badge">!</span>':''}</td>
       <td style="width:108px;font-size:11px;font-weight:500">${p.modeloBase}</td>
       <td style="width:130px;font-size:11px">${p.colecaoCor}</td>
@@ -2994,7 +3123,7 @@ function renderListaSalva(peds, grupos, lista) {
       </div>
       <div id="g${gi}">
         <table><thead><tr>
-          <th style="width:26px"></th><th style="width:65px">Pedido</th>
+          <th style="width:26px"></th><th style="width:30px">Nº</th><th style="width:65px">Pedido</th>
           <th style="width:108px">Modelo</th><th style="width:130px">Cor / Coleção</th>
           <th style="width:120px">Bordado</th><th style="width:72px">Vendedora</th>
           <th style="width:55px">Envio</th><th style="width:88px">Status</th>
@@ -3068,7 +3197,28 @@ async function carregarFicha() {
   // Todos os itens (bolsas e acessórios) usam tecido, então entram na ficha de corte.
   // O filtro por tipo (Todos / Bolsas / Acess.) acima permite separar quando necessário.
 
-  if (!peds.length) {
+  // Peças de pronta entrega disponíveis (não vendidas), se a opção estiver marcada
+  const incluirPE = (document.getElementById('ficha-incluir-pe')||{checked:false}).checked;
+  let pecasPE = [];
+  if (incluirPE) {
+    (LISTAS_PE||[]).forEach(l => (l.pecas||[]).forEach(pc => {
+      if (pc.vendida) return;
+      const modeloBase = extrairModeloBase ? extrairModeloBase(pc.modelo||l.modelo||'') : (pc.modelo||l.modelo||'');
+      pecasPE.push({
+        modeloBase: modeloBase || (pc.modelo||l.modelo),
+        colecaoCor: pc.colecao_cor || 'Sem cor',
+        listaNumero: l.numero,
+        isPE: true,
+      });
+    }));
+    // Aplica os mesmos filtros da ficha às peças PE
+    if (FICHA_MODELOS.length) pecasPE = pecasPE.filter(p => FICHA_MODELOS.some(m => (p.modeloBase||'').toLowerCase().includes(m.toLowerCase())));
+    if (FICHA_TIPO !== 'todos') pecasPE = pecasPE.filter(p => getTipo(p.modeloBase) === FICHA_TIPO);
+    if (FICHA_LOTE) pecasPE = []; // PE não tem lote de envio de pedido; quando filtra por lote, não entra
+    if (colecao) pecasPE = pecasPE.filter(p => colecaoCombina(p.colecaoCor, colecao));
+  }
+
+  if (!peds.length && !pecasPE.length) {
     document.getElementById('ficha-cont').innerHTML='<div class="loading">Nenhum item encontrado com esses filtros</div>';
     return;
   }
@@ -3091,6 +3241,7 @@ async function carregarFicha() {
 
   // Agrupa conforme a visão escolhida
   const ficha = {};
+  const peItens = {}; // marca quais chaves de item são PE (para estilo)
   if (FICHA_VISAO === 'modelo') {
     // Por modelo: cada card é um modelo, dentro as cores
     peds.forEach(p => {
@@ -3098,6 +3249,14 @@ async function carregarFicha() {
       const cor = p.colecaoCor || 'Sem cor';
       if (!ficha[modelo]) ficha[modelo] = {};
       ficha[modelo][cor] = (ficha[modelo][cor]||0) + (p.quantidade||1);
+    });
+    // Peças PE: dentro do modelo, item separado marcado com a lista
+    pecasPE.forEach(p => {
+      const modelo = p.modeloBase || 'Sem modelo';
+      const nomeItem = `${p.colecaoCor} · PRONTA ENTREGA #${p.listaNumero}`;
+      if (!ficha[modelo]) ficha[modelo] = {};
+      ficha[modelo][nomeItem] = (ficha[modelo][nomeItem]||0) + 1;
+      peItens[modelo+'||'+nomeItem] = true;
     });
   } else {
     // Por cor/coleção: cada card é uma cor, dentro os modelos
@@ -3107,16 +3266,25 @@ async function carregarFicha() {
       if (!ficha[cor]) ficha[cor] = {};
       ficha[cor][modelo] = (ficha[cor][modelo]||0) + (p.quantidade||1);
     });
+    // Peças PE: dentro da cor, item separado marcado com a lista
+    pecasPE.forEach(p => {
+      const cor = p.colecaoCor || 'Sem cor';
+      const nomeItem = `${p.modeloBase} · PRONTA ENTREGA #${p.listaNumero}`;
+      if (!ficha[cor]) ficha[cor] = {};
+      ficha[cor][nomeItem] = (ficha[cor][nomeItem]||0) + 1;
+      peItens[cor+'||'+nomeItem] = true;
+    });
   }
   const grupos = Object.entries(ficha)
-    .map(([titulo,sub]) => ({titulo, itens:Object.entries(sub).map(([nome,qtd])=>({nome,qtd})).sort((a,b)=>b.qtd-a.qtd), total:Object.values(sub).reduce((s,v)=>s+v,0)}))
+    .map(([titulo,sub]) => ({titulo, itens:Object.entries(sub).map(([nome,qtd])=>({nome,qtd,isPE:!!peItens[titulo+'||'+nome]})).sort((a,b)=>b.qtd-a.qtd), total:Object.values(sub).reduce((s,v)=>s+v,0)}))
     .sort((a,b)=>b.total-a.total);
 
   const tot = grupos.reduce((s,g)=>s+g.total,0);
+  const totPE = pecasPE.length;
   const tituloFiltro = [FICHA_LOTE?'Lote '+FICHA_LOTE:'', FICHA_MODELOS.join(', '), FICHA_TIPO!=='todos'?(FICHA_TIPO==='bolsa'?'Bolsas':'Acessórios'):''].filter(Boolean).join(' · ') || 'Todos os pedidos';
 
   let html = `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">
-    <div style="font-size:13px;color:var(--text3)"><strong style="color:var(--text);font-size:15px;font-family:var(--serif);font-style:italic">${tot} peças</strong> · ${tituloFiltro}</div>
+    <div style="font-size:13px;color:var(--text3)"><strong style="color:var(--text);font-size:15px;font-family:var(--serif);font-style:italic">${tot} peças</strong> · ${tituloFiltro}${totPE?` · <span style="color:#1e6640">${totPE} de pronta entrega</span>`:''}</div>
     <div style="display:flex;gap:8px;font-size:12px">
       <span style="background:var(--rose-ll);padding:4px 10px;border-radius:6px;color:var(--rose)">👜 ${peds.filter(p=>getTipo(p.modeloBase)==='bolsa').length} bolsas</span>
       <span style="background:var(--bg3);padding:4px 10px;border-radius:6px;color:var(--text2)">🎀 ${peds.filter(p=>getTipo(p.modeloBase)!=='bolsa').length} acessórios</span>
@@ -3125,13 +3293,13 @@ async function carregarFicha() {
 
   for(const g of grupos){
     html+=`<div class="ficha-card"><div class="ficha-hd"><span>${g.titulo}</span><span>${g.total} pç</span></div>`;
-    for(const i of g.itens) html+=`<div class="ficha-item"><span>${i.nome}</span><span class="ficha-qtd">${i.qtd}</span></div>`;
+    for(const i of g.itens) html+=`<div class="ficha-item"${i.isPE?' style="color:#1e6640"':''}><span>${i.isPE?'🟢 ':''}${i.nome}</span><span class="ficha-qtd"${i.isPE?' style="background:#edf7f1;color:#1e6640"':''}>${i.qtd}</span></div>`;
     html+='</div>';
   }
   html+='</div>';
   document.getElementById('ficha-cont').innerHTML=html;
   // Guarda para impressão em janela limpa
-  window._FICHA_DADOS = { grupos, tot, tituloFiltro, visao: FICHA_VISAO };
+  window._FICHA_DADOS = { grupos, tot, totPE, tituloFiltro, visao: FICHA_VISAO };
 }
 
 // Imprime a ficha em janela limpa (evita folha vazia)
@@ -3142,7 +3310,7 @@ function imprimirFicha() {
   const cards = d.grupos.map(g => `
     <div class="ficha-card">
       <div class="ficha-hd"><span>${g.titulo}</span><span>${g.total} pç</span></div>
-      ${g.itens.map(i => `<div class="ficha-item"><span>${i.nome}</span><span class="qtd">${i.qtd}</span></div>`).join('')}
+      ${g.itens.map(i => `<div class="ficha-item${i.isPE?' pe':''}"><span>${i.isPE?'● ':''}${i.nome}</span><span class="qtd">${i.qtd}</span></div>`).join('')}
     </div>`).join('');
   const win = window.open('', '_blank');
   if (!win) { toast('Permita pop-ups para imprimir'); return; }
@@ -3160,12 +3328,13 @@ function imprimirFicha() {
       .ficha-card{border:1px solid #e3dcdc;border-radius:8px;overflow:hidden;break-inside:avoid;page-break-inside:avoid}
       .ficha-hd{background:#f5efef;padding:7px 11px;display:flex;justify-content:space-between;font-weight:600;color:#8A4C52;font-size:12px}
       .ficha-item{display:flex;justify-content:space-between;padding:5px 11px;border-top:1px solid #f0ebeb;font-size:11px}
+      .ficha-item.pe{color:#1e6640;background:#f3faf5}
       .qtd{font-weight:600;color:#8A4C52}
     </style></head>
     <body>
       <div class="cab">
         <div class="cab-tit">Vilma Mirian — Ficha de Corte</div>
-        <div class="cab-sub">${d.tot} peças · ${d.tituloFiltro} · ${subtitulo}</div>
+        <div class="cab-sub">${d.tot} peças · ${d.tituloFiltro}${d.totPE?' · '+d.totPE+' de pronta entrega':''} · ${subtitulo}</div>
       </div>
       <div class="ficha-grid">${cards}</div>
       <script>window.onload=function(){setTimeout(function(){window.print();},200);};<\/script>
