@@ -18,6 +18,31 @@ const SCOPES = 'read_orders,read_draft_orders,read_products';
 const SENHA = process.env.APP_PASSWORD || 'vilmamirian2025';
 const CAPACIDADE_DIARIA = 35;
 
+// ── Senhas (hash seguro com scrypt nativo) ────────────────────────────────────
+function hashSenha(senha) {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const derivada = crypto.scryptSync(String(senha), salt, 64).toString('hex');
+  return salt + ':' + derivada;
+}
+function verificarSenha(senha, hashGuardado) {
+  if (!hashGuardado || !hashGuardado.includes(':')) return false;
+  const [salt, derivada] = hashGuardado.split(':');
+  const teste = crypto.scryptSync(String(senha), salt, 64).toString('hex');
+  // Comparação em tempo constante
+  const a = Buffer.from(teste, 'hex');
+  const b = Buffer.from(derivada, 'hex');
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
+// Papéis e suas permissões
+const PAPEIS = {
+  admin:      { label:'Administrador', podeEditar:true,  podeVerUsuarios:true,  somenteLeitura:false },
+  producao:   { label:'Produção',      podeEditar:true,  podeVerUsuarios:false, somenteLeitura:false },
+  vendedora:  { label:'Vendedora',     podeEditar:true,  podeVerUsuarios:false, somenteLeitura:false },
+  edicao:     { label:'Edição',        podeEditar:true,  podeVerUsuarios:false, somenteLeitura:false },
+  leitura:    { label:'Somente leitura',podeEditar:false, podeVerUsuarios:false, somenteLeitura:true },
+};
+
 // ── PostgreSQL ────────────────────────────────────────────────────────────────
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
@@ -113,6 +138,16 @@ async function initDB() {
       criada_em TIMESTAMP DEFAULT NOW(),
       vendida_em TIMESTAMP
     );
+  CREATE TABLE IF NOT EXISTS usuarios (
+      id TEXT PRIMARY KEY,
+      nome TEXT NOT NULL,
+      email TEXT UNIQUE NOT NULL,
+      whatsapp TEXT,
+      senha_hash TEXT NOT NULL,
+      papel TEXT NOT NULL DEFAULT 'leitura',
+      ativo BOOLEAN DEFAULT TRUE,
+      criado_em TIMESTAMP DEFAULT NOW()
+    );
   `);
   // Garante a coluna item_id no histórico (para bancos que já existiam antes)
   try {
@@ -122,6 +157,20 @@ async function initDB() {
   try {
     await pool.query(`ALTER TABLE listas_pe ADD COLUMN IF NOT EXISTS data_producao TEXT`);
   } catch(e) { console.error('ALTER listas_pe:', e.message); }
+  // Cria um admin inicial se não houver nenhum usuário ainda
+  try {
+    const r = await pool.query(`SELECT COUNT(*)::int AS n FROM usuarios`);
+    if (r.rows[0].n === 0) {
+      const emailAdmin = process.env.ADMIN_EMAIL || 'admin@vilmamirian.com';
+      const senhaAdmin = process.env.APP_PASSWORD || 'vilmamirian2025';
+      await pool.query(
+        `INSERT INTO usuarios(id, nome, email, whatsapp, senha_hash, papel, ativo)
+         VALUES($1,$2,$3,$4,$5,'admin',TRUE)`,
+        [crypto.randomBytes(8).toString('hex'), 'Administrador', emailAdmin.toLowerCase(), null, hashSenha(senhaAdmin)]
+      );
+      console.log('Admin inicial criado:', emailAdmin, '(senha = APP_PASSWORD atual)');
+    }
+  } catch(e) { console.error('criar admin inicial:', e.message); }
   console.log('DB inicializado');
 }
 
@@ -213,23 +262,50 @@ async function marcarItensProducao(itemIds, listaNumero, status='em_producao') {
 }
 
 // ── Sessões ───────────────────────────────────────────────────────────────────
-const SESSIONS = new Set();
+// Mapa sessionId -> { userId, papel, nome, email }
+const SESSIONS = new Map();
 
-function gerarSession() {
+function gerarSession(usuario) {
   const id = crypto.randomBytes(32).toString('hex');
-  SESSIONS.add(id);
+  SESSIONS.set(id, { userId: usuario.id, papel: usuario.papel, nome: usuario.nome, email: usuario.email });
   return id;
 }
 
-function validarSession(req) {
+function sessionAtual(req) {
   const cookie = req.headers.cookie || '';
   const match = cookie.match(/vm_session=([a-f0-9]+)/);
-  return match && SESSIONS.has(match[1]);
+  if (!match) return null;
+  return SESSIONS.get(match[1]) || null;
+}
+
+function validarSession(req) {
+  return sessionAtual(req) !== null;
+}
+
+// Bloqueia ações de escrita para usuários "somente leitura"
+function exigirEdicao(req, res, next) {
+  const s = sessionAtual(req);
+  if (!s) return res.status(401).json({ error: 'Não autenticado' });
+  const papel = PAPEIS[s.papel];
+  if (papel && papel.somenteLeitura) return res.status(403).json({ error: 'Seu acesso é somente leitura' });
+  next();
+}
+
+// Exige que o usuário seja admin
+function exigirAdmin(req, res, next) {
+  const s = sessionAtual(req);
+  if (!s) return res.status(401).json({ error: 'Não autenticado' });
+  if (s.papel !== 'admin') return res.status(403).json({ error: 'Apenas administradores' });
+  next();
 }
 
 function authMiddleware(req, res, next) {
   if (req.path === '/login' || req.path === '/auth' || req.path === '/auth/callback') return next();
-  if (!validarSession(req)) return res.redirect('/login');
+  if (!validarSession(req)) {
+    // Para chamadas de API responde 401; para páginas redireciona ao login
+    if (req.path.startsWith('/api/')) return res.status(401).json({ error: 'Sessão expirada' });
+    return res.redirect('/login');
+  }
   next();
 }
 app.use(authMiddleware);
@@ -238,19 +314,38 @@ app.use(authMiddleware);
 app.get('/login', (req, res) => {
   res.send(`<!DOCTYPE html><html lang="pt-BR"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Vilma Mirian — Produção</title>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;1,400&family=Jost:wght@300;400;500&display=swap" rel="stylesheet">
-<style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:'Jost',sans-serif;background:#fafaf8;display:flex;align-items:center;justify-content:center;min-height:100vh;color:#2a2526}.box{background:#fff;border:1px solid #e8dfe0;border-radius:16px;padding:48px 40px;width:360px;text-align:center;box-shadow:0 4px 24px rgba(138,76,82,.08)}.logo{font-family:'Playfair Display',serif;font-style:italic;font-size:28px;color:#8A4C52;margin-bottom:6px}.sub{font-size:12px;color:#9a8a8c;margin-bottom:32px;letter-spacing:.06em;text-transform:uppercase}input{width:100%;padding:12px 16px;border:1px solid #d4c8c9;border-radius:9px;font-size:14px;font-family:'Jost',sans-serif;color:#2a2526;background:#fafaf8;outline:none;transition:border .2s;margin-bottom:12px}input:focus{border-color:#8A4C52}button{width:100%;padding:12px;background:#8A4C52;color:#fff;border:none;border-radius:9px;font-size:13px;font-family:'Jost',sans-serif;letter-spacing:.08em;text-transform:uppercase;cursor:pointer;transition:background .2s}button:hover{background:#7a3d44}.err{color:#c0392b;font-size:12px;margin-bottom:12px;display:none}</style></head>
+<style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:'Jost',sans-serif;background:#fafaf8;display:flex;align-items:center;justify-content:center;min-height:100vh;color:#2a2526}.box{background:#fff;border:1px solid #e8dfe0;border-radius:16px;padding:48px 40px;width:360px;text-align:center;box-shadow:0 4px 24px rgba(138,76,82,.08)}.logo{font-family:'Playfair Display',serif;font-style:italic;font-size:28px;color:#8A4C52;margin-bottom:6px}.sub{font-size:12px;color:#9a8a8c;margin-bottom:32px;letter-spacing:.06em;text-transform:uppercase}input{width:100%;padding:12px 16px;border:1px solid #d4c8c9;border-radius:9px;font-size:14px;font-family:'Jost',sans-serif;color:#2a2526;background:#fafaf8;outline:none;transition:border .2s;margin-bottom:12px}input:focus{border-color:#8A4C52}button{width:100%;padding:12px;background:#8A4C52;color:#fff;border:none;border-radius:9px;font-size:13px;font-family:'Jost',sans-serif;letter-spacing:.08em;text-transform:uppercase;cursor:pointer;transition:background .2s}button:hover{background:#7a3d44}.err{color:#c0392b;font-size:12px;margin-bottom:12px;display:none}.hint{font-size:11px;color:#9a8a8c;margin-top:16px}</style></head>
 <body><div class="box"><div class="logo">Vilma Mirian</div><div class="sub">Sistema de Produção</div>
-<div class="err" id="err">Senha incorreta</div>
-<form onsubmit="entrar(event)"><input type="password" id="senha" placeholder="Digite a senha" autocomplete="current-password"><button type="submit">Entrar</button></form></div>
-<script>async function entrar(e){e.preventDefault();const r=await fetch('/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({senha:document.getElementById('senha').value})});if(r.ok)window.location.href='/';else document.getElementById('err').style.display='block';}</script>
+<div class="err" id="err">Email ou senha incorretos</div>
+<form onsubmit="entrar(event)">
+  <input type="email" id="email" placeholder="Email" autocomplete="username" required>
+  <input type="password" id="senha" placeholder="Senha" autocomplete="current-password" required>
+  <button type="submit">Entrar</button>
+</form>
+<div class="hint">Esqueceu a senha? Peça ao administrador para redefinir.</div></div>
+<script>async function entrar(e){e.preventDefault();const r=await fetch('/login',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({email:document.getElementById('email').value,senha:document.getElementById('senha').value})});if(r.ok)window.location.href='/';else document.getElementById('err').style.display='block';}</script>
 </body></html>`);
 });
 
-app.post('/login', (req, res) => {
-  if (req.body.senha !== SENHA) return res.status(401).json({ error: 'Senha incorreta' });
-  const sid = gerarSession();
-  res.setHeader('Set-Cookie', `vm_session=${sid}; Path=/; HttpOnly; SameSite=Lax; Max-Age=86400`);
-  res.json({ ok: true });
+app.post('/login', async (req, res) => {
+  try {
+    const email = (req.body.email||'').toLowerCase().trim();
+    const senha = req.body.senha||'';
+    // Compatibilidade: se mandar só "senha" (login antigo), aceita como admin inicial
+    if (!email && senha) {
+      if (senha !== SENHA) return res.status(401).json({ error: 'Senha incorreta' });
+      const adm = (await pool.query(`SELECT * FROM usuarios WHERE papel='admin' AND ativo=TRUE ORDER BY criado_em ASC LIMIT 1`)).rows[0];
+      if (!adm) return res.status(401).json({ error: 'Sem usuário admin' });
+      const sid = gerarSession(adm);
+      res.setHeader('Set-Cookie', `vm_session=${sid}; Path=/; HttpOnly; SameSite=Lax; Max-Age=86400`);
+      return res.json({ ok: true });
+    }
+    const u = (await pool.query(`SELECT * FROM usuarios WHERE email=$1 AND ativo=TRUE`, [email])).rows[0];
+    if (!u || !verificarSenha(senha, u.senha_hash)) return res.status(401).json({ error: 'Email ou senha incorretos' });
+    const sid = gerarSession(u);
+    res.setHeader('Set-Cookie', `vm_session=${sid}; Path=/; HttpOnly; SameSite=Lax; Max-Age=86400`);
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
 app.post('/logout', (req, res) => {
@@ -258,6 +353,88 @@ app.post('/logout', (req, res) => {
   if (m) SESSIONS.delete(m[1]);
   res.setHeader('Set-Cookie', 'vm_session=; Path=/; Max-Age=0');
   res.redirect('/login');
+});
+
+// Quem sou eu (para o front saber papel e permissões)
+app.get('/api/me', (req, res) => {
+  const s = sessionAtual(req);
+  if (!s) return res.status(401).json({ error: 'Não autenticado' });
+  const perm = PAPEIS[s.papel] || PAPEIS.leitura;
+  res.json({ nome: s.nome, email: s.email, papel: s.papel, permissoes: perm });
+});
+
+// ── Gestão de usuários (somente admin) ────────────────────────────────────────
+app.get('/api/usuarios', exigirAdmin, async (req, res) => {
+  try {
+    const r = await pool.query(`SELECT id, nome, email, whatsapp, papel, ativo, criado_em FROM usuarios ORDER BY criado_em ASC`);
+    res.json({ usuarios: r.rows, papeis: PAPEIS });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.post('/api/usuarios', exigirAdmin, async (req, res) => {
+  try {
+    const { nome, email, whatsapp, senha, papel } = req.body;
+    if (!nome || !email || !senha) return res.status(400).json({ error: 'Nome, email e senha são obrigatórios' });
+    if (!PAPEIS[papel]) return res.status(400).json({ error: 'Papel inválido' });
+    const emailL = email.toLowerCase().trim();
+    const existe = (await pool.query(`SELECT 1 FROM usuarios WHERE email=$1`, [emailL])).rows[0];
+    if (existe) return res.status(409).json({ error: 'Já existe um usuário com esse email' });
+    const id = crypto.randomBytes(8).toString('hex');
+    await pool.query(
+      `INSERT INTO usuarios(id, nome, email, whatsapp, senha_hash, papel, ativo) VALUES($1,$2,$3,$4,$5,$6,TRUE)`,
+      [id, nome.trim(), emailL, (whatsapp||'').trim()||null, hashSenha(senha), papel]
+    );
+    res.json({ ok: true, id });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.put('/api/usuarios/:id', exigirAdmin, async (req, res) => {
+  try {
+    const { nome, email, whatsapp, papel, ativo } = req.body;
+    if (papel && !PAPEIS[papel]) return res.status(400).json({ error: 'Papel inválido' });
+    const u = (await pool.query(`SELECT * FROM usuarios WHERE id=$1`, [req.params.id])).rows[0];
+    if (!u) return res.status(404).json({ error: 'Usuário não encontrado' });
+    // Impede remover o último admin ativo
+    if (u.papel === 'admin' && (papel && papel !== 'admin' || ativo === false)) {
+      const nAdmins = (await pool.query(`SELECT COUNT(*)::int AS n FROM usuarios WHERE papel='admin' AND ativo=TRUE`)).rows[0].n;
+      if (nAdmins <= 1) return res.status(400).json({ error: 'Não é possível alterar o último administrador ativo' });
+    }
+    const emailL = email ? email.toLowerCase().trim() : u.email;
+    if (emailL !== u.email) {
+      const existe = (await pool.query(`SELECT 1 FROM usuarios WHERE email=$1 AND id<>$2`, [emailL, u.id])).rows[0];
+      if (existe) return res.status(409).json({ error: 'Já existe um usuário com esse email' });
+    }
+    await pool.query(
+      `UPDATE usuarios SET nome=$2, email=$3, whatsapp=$4, papel=$5, ativo=$6 WHERE id=$1`,
+      [u.id, (nome||u.nome).trim(), emailL, (whatsapp!==undefined?whatsapp:u.whatsapp)||null, papel||u.papel, ativo!==undefined?ativo:u.ativo]
+    );
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// Admin redefine a senha de um usuário direto
+app.post('/api/usuarios/:id/senha', exigirAdmin, async (req, res) => {
+  try {
+    const { senha } = req.body;
+    if (!senha || senha.length < 4) return res.status(400).json({ error: 'A senha deve ter ao menos 4 caracteres' });
+    const u = (await pool.query(`SELECT * FROM usuarios WHERE id=$1`, [req.params.id])).rows[0];
+    if (!u) return res.status(404).json({ error: 'Usuário não encontrado' });
+    await pool.query(`UPDATE usuarios SET senha_hash=$2 WHERE id=$1`, [u.id, hashSenha(senha)]);
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+app.delete('/api/usuarios/:id', exigirAdmin, async (req, res) => {
+  try {
+    const u = (await pool.query(`SELECT * FROM usuarios WHERE id=$1`, [req.params.id])).rows[0];
+    if (!u) return res.status(404).json({ error: 'Usuário não encontrado' });
+    if (u.papel === 'admin') {
+      const nAdmins = (await pool.query(`SELECT COUNT(*)::int AS n FROM usuarios WHERE papel='admin' AND ativo=TRUE`)).rows[0].n;
+      if (nAdmins <= 1) return res.status(400).json({ error: 'Não é possível excluir o último administrador' });
+    }
+    await pool.query(`DELETE FROM usuarios WHERE id=$1`, [u.id]);
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
 // ── OAuth ─────────────────────────────────────────────────────────────────────
@@ -819,7 +996,7 @@ app.get('/api/painel-bordado', async (req,res) => {
 
 app.get('/api/listas', async (req,res) => { res.json({listas:await loadListas()}); });
 
-app.post('/api/listas', async (req,res) => {
+app.post('/api/listas', exigirEdicao, async (req,res) => {
   const { nome, pedidoIds, dataEnvio, totalPecas, modelos } = req.body;
   const numero = await proximoNumeroLista();
   const lista = { id:crypto.randomBytes(8).toString('hex'), numero, nome:nome||`Lista #${numero}`,
@@ -832,13 +1009,13 @@ app.post('/api/listas', async (req,res) => {
   res.json({lista});
 });
 
-app.put('/api/listas/:id', async (req,res) => {
+app.put('/api/listas/:id', exigirEdicao, async (req,res) => {
   await atualizarLista(req.params.id, req.body);
   const listas = await loadListas();
   res.json({lista:listas.find(l=>l.id===req.params.id)});
 });
 
-app.delete('/api/listas/:id', async (req,res) => {
+app.delete('/api/listas/:id', exigirEdicao, async (req,res) => {
   // Antes de excluir, libera os itens dessa lista (remove status de produção)
   try {
     const listas = await loadListas();
@@ -887,7 +1064,7 @@ app.get('/api/pronta-entrega/estoque', async (req,res) => {
 });
 
 // Cria uma lista PE (numeração na mesma sequência das listas de produção)
-app.post('/api/listas-pe', async (req,res) => {
+app.post('/api/listas-pe', exigirEdicao, async (req,res) => {
   try {
     const { modelo, dataEnvio } = req.body;
     if (!modelo || !modelo.trim()) return res.status(400).json({error:'Modelo é obrigatório'});
@@ -902,7 +1079,7 @@ app.post('/api/listas-pe', async (req,res) => {
 });
 
 // Atualiza dados da lista PE (ex: data de produção)
-app.put('/api/listas-pe/:id', async (req,res) => {
+app.put('/api/listas-pe/:id', exigirEdicao, async (req,res) => {
   try {
     const { dataProducao, dataEnvio, modelo } = req.body;
     const campos = [];
@@ -918,7 +1095,7 @@ app.put('/api/listas-pe/:id', async (req,res) => {
 });
 
 // Exclui uma lista PE (e suas peças)
-app.delete('/api/listas-pe/:id', async (req,res) => {
+app.delete('/api/listas-pe/:id', exigirEdicao, async (req,res) => {
   try {
     await pool.query(`DELETE FROM pecas_pe WHERE lista_id=$1`, [req.params.id]);
     await pool.query(`DELETE FROM listas_pe WHERE id=$1`, [req.params.id]);
@@ -927,7 +1104,7 @@ app.delete('/api/listas-pe/:id', async (req,res) => {
 });
 
 // Adiciona uma peça a uma lista PE
-app.post('/api/listas-pe/:id/pecas', async (req,res) => {
+app.post('/api/listas-pe/:id/pecas', exigirEdicao, async (req,res) => {
   try {
     const { modelo, colecaoCor, bordado, obs, numeroPedido, vendedora } = req.body;
     const lista = (await pool.query(`SELECT * FROM listas_pe WHERE id=$1`, [req.params.id])).rows[0];
@@ -944,7 +1121,7 @@ app.post('/api/listas-pe/:id/pecas', async (req,res) => {
 });
 
 // Edita uma peça PE
-app.put('/api/pecas-pe/:id', async (req,res) => {
+app.put('/api/pecas-pe/:id', exigirEdicao, async (req,res) => {
   try {
     const { modelo, colecaoCor, bordado, obs, numeroPedido, vendedora } = req.body;
     await pool.query(
@@ -956,7 +1133,7 @@ app.put('/api/pecas-pe/:id', async (req,res) => {
 });
 
 // Marca peça PE como vendida (registra pedido e vendedora) — sai do estoque
-app.post('/api/pecas-pe/:id/vender', async (req,res) => {
+app.post('/api/pecas-pe/:id/vender', exigirEdicao, async (req,res) => {
   try {
     const { numeroPedido, vendedora } = req.body;
     await pool.query(
@@ -968,7 +1145,7 @@ app.post('/api/pecas-pe/:id/vender', async (req,res) => {
 });
 
 // Reverte a venda de uma peça (volta ao estoque)
-app.post('/api/pecas-pe/:id/devolver', async (req,res) => {
+app.post('/api/pecas-pe/:id/devolver', exigirEdicao, async (req,res) => {
   try {
     await pool.query(
       `UPDATE pecas_pe SET vendida=FALSE, numero_pedido=NULL, vendedora=NULL, vendida_em=NULL WHERE id=$1`,
@@ -979,14 +1156,14 @@ app.post('/api/pecas-pe/:id/devolver', async (req,res) => {
 });
 
 // Exclui uma peça PE
-app.delete('/api/pecas-pe/:id', async (req,res) => {
+app.delete('/api/pecas-pe/:id', exigirEdicao, async (req,res) => {
   try {
     await pool.query(`DELETE FROM pecas_pe WHERE id=$1`, [req.params.id]);
     res.json({ ok:true });
   } catch(e) { res.status(500).json({error:e.message}); }
 });
 
-app.post('/api/pedido/:id/status', async (req,res) => {
+app.post('/api/pedido/:id/status', exigirEdicao, async (req,res) => {
   const token = await loadToken();
   if (!token) return res.status(401).json({error:'Não autorizado'});
   try {
@@ -1074,7 +1251,7 @@ app.get('/api/historico-geral', async (req,res) => {
   } catch(e) { res.status(500).json({error:e.message}); }
 });
 
-app.post('/api/pedido/:id/editar', async (req,res) => {
+app.post('/api/pedido/:id/editar', exigirEdicao, async (req,res) => {
   try {
     const { id } = req.params; // orderId
     const { alteradoPor, numero, itemId, campos } = req.body;
