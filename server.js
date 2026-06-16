@@ -613,7 +613,7 @@ function extrairModeloBase(title) {
 }
 
 function extrairCorDoTitulo(title) {
-  const cols = ['Ella','Urban Chic','Nós','Origem','Le Petit','Tressê Palha'];
+  const cols = ['Linho','Ella','Urban Chic','Nós','Origem','Le Petit','Tressê Palha'];
   const cores = ['Café','Caramelo','Off White','Marinho','Bordô','Cinza','Bege','Preto','Rosé','Marrom','Verde','Nude','Vinho','Rosa','Azul','Preta'];
   let c = '', r = '';
   for (const x of cols) { if (title.toLowerCase().includes(x.toLowerCase())) { c = x; break; } }
@@ -631,6 +631,14 @@ function expandirKit(item) {
   const title = item.title || '';
   // Kits de documentos são um único produto — não quebrar em partes
   if (title.toLowerCase().includes('documento')) return [item];
+  // Kits de SEO que são UM produto só (a palavra "organizadores" é só do site, não é peça):
+  // "Kit Organizadores Cristal", "Kit Organizadores Porta Look" → não quebrar.
+  const tl = title.toLowerCase();
+  if (tl.includes('organizadores cristal') || tl.includes('organizador cristal') ||
+      tl.includes('organizadores porta look') || tl.includes('organizador porta look') ||
+      tl.includes('kit cristal') || tl.includes('kit porta look')) {
+    return [item];
+  }
   if (!title.toLowerCase().includes('kit')) return [item];
   const parteDesc = title.replace(/^kit\s+[\w\sÀ-ú]+[-:]/i, '') || title;
   const partes = parteDesc.split(/,|\se\s/i).map(p => p.trim()).filter(p => p.length > 2);
@@ -683,18 +691,16 @@ function parseObs(note) {
   let vendedora=null, dataEnvio=null, bordadoGeral=null, isProntaEntrega=false;
   const bordadosPorModelo = {}, extras = [];
 
-  // Acumula bordados do mesmo modelo (ex: 2 pingentes com nomes diferentes viram "Joaquim, EVA")
+  // Acumula bordados do mesmo modelo como LISTA (ex: 3 pingentes -> [Joaquim, EVA, Rizzo]),
+  // para depois distribuir um por unidade na ordem em que aparecem.
   const semBordadoRe = /^(sem\s*bordado|s\/bordado|sem|s\/|s\/b)$/i;
   const addBordado = (key, val) => {
     const limpo = (val == null || semBordadoRe.test(String(val).trim())) ? null : String(val).trim();
-    if (limpo == null) { if (!(key in bordadosPorModelo)) bordadosPorModelo[key] = null; return; }
-    if (bordadosPorModelo[key]) {
-      // Não duplica se já contém o mesmo valor
-      const jaTem = bordadosPorModelo[key].split(',').map(s=>s.trim().toLowerCase());
-      if (!jaTem.includes(limpo.toLowerCase())) bordadosPorModelo[key] += ', ' + limpo;
-    } else {
-      bordadosPorModelo[key] = limpo;
-    }
+    if (!Array.isArray(bordadosPorModelo[key])) bordadosPorModelo[key] = [];
+    if (limpo == null) return; // "sem bordado" não adiciona nome, só garante a chave
+    // Não duplica valor idêntico consecutivo
+    const jaTem = bordadosPorModelo[key].map(s=>s.toLowerCase());
+    if (!jaTem.includes(limpo.toLowerCase())) bordadosPorModelo[key].push(limpo);
   };
 
   for (let line of lines) {
@@ -778,56 +784,67 @@ function parseObs(note) {
   return { vendedora, dataEnvio, bordadoGeral, bordadosPorModelo, obsCliente: extras.join(' | ')||null, isProntaEntrega, isUrgente, isPrioridade };
 }
 
-function getBordado(obs, modeloBase) {
+function getBordado(obs, modeloBase, unidade) {
   if (!obs) return null;
   const mb = (modeloBase||'').toLowerCase();
   const bpm = obs.bordadosPorModelo || {};
 
-  // Busca exata primeiro
-  for (const [key, val] of Object.entries(bpm)) {
-    if (mb === key) return val;
-  }
-
-  // Busca por inclusão — modeloBase contém a chave ou a chave contém o modeloBase,
-  // exigindo que a parte coincidente seja significativa (evita casar por fragmentos).
-  for (const [key, val] of Object.entries(bpm)) {
-    if (key.length >= 4 && (mb.includes(key) || key.includes(mb))) return val;
-  }
-
-  // Busca aproximada — remove acentos e compara nomes completos (não fragmentos)
+  // Encontra a LISTA de bordados que corresponde a este modelo
+  let lista = null;
   const removerAcentos = s => s.normalize('NFD').replace(/[\u0300-\u036f]/g,'');
   const mbSemAcento = removerAcentos(mb);
-  for (const [key, val] of Object.entries(bpm)) {
-    const keySemAcento = removerAcentos(key);
-    if (mbSemAcento.includes(keySemAcento) || keySemAcento.includes(mbSemAcento)) return val;
-  }
 
-  // Aliases — chaves alternativas que mapeiam para o modelo
-  const aliases = {
-    'madison': ['bolsa madison','madison mini','bolsa maternidade madison'],
-    'mala de rodinhas': ['mala rodinha','mala rodinhas','mala de rodinha'],
-    'necessaire': ['kit de necessaire','kit necessaire','kit de nécessaire','kit nécessaire'],
-    'kit cristal': ['kit cristal','cristal kit'],
-    'bolsa cleo': ['cleo','bolsa cleo'],
-    'porta look': ['kit porta look','porta look'],
-    'trocador': ['trocador portátil','trocador portatil'],
-    'kit documentos': ['kit de documentos','kit documentos','kit documento','porta documentos','porta documento','documento'],
-  };
-  for (const [modelo, alts] of Object.entries(aliases)) {
-    if (mb.includes(modelo) || alts.some(a => mb.includes(a))) {
-      for (const [key, val] of Object.entries(bpm)) {
-        if (alts.some(a => key.includes(a)) || key.includes(modelo)) return val;
+  // 1) Exato
+  for (const [key, val] of Object.entries(bpm)) { if (mb === key) { lista = val; break; } }
+  // 2) Inclusão significativa
+  if (lista === null) for (const [key, val] of Object.entries(bpm)) {
+    if (key.length >= 4 && (mb.includes(key) || key.includes(mb))) { lista = val; break; }
+  }
+  // 3) Sem acento
+  if (lista === null) for (const [key, val] of Object.entries(bpm)) {
+    const keySemAcento = removerAcentos(key);
+    if (mbSemAcento.includes(keySemAcento) || keySemAcento.includes(mbSemAcento)) { lista = val; break; }
+  }
+  // 4) Aliases
+  if (lista === null) {
+    const aliases = {
+      'madison': ['bolsa madison','madison mini','bolsa maternidade madison'],
+      'mala de rodinhas': ['mala rodinha','mala rodinhas','mala de rodinha'],
+      'necessaire': ['kit de necessaire','kit necessaire','kit de nécessaire','kit nécessaire'],
+      'kit cristal': ['kit cristal','cristal kit'],
+      'bolsa cleo': ['cleo','bolsa cleo'],
+      'porta look': ['kit porta look','porta look'],
+      'trocador': ['trocador portátil','trocador portatil'],
+      'kit documentos': ['kit de documentos','kit documentos','kit documento','porta documentos','porta documento','documento'],
+    };
+    for (const [modelo, alts] of Object.entries(aliases)) {
+      if (mb.includes(modelo) || alts.some(a => mb.includes(a))) {
+        for (const [key, val] of Object.entries(bpm)) {
+          if (alts.some(a => key.includes(a)) || key.includes(modelo)) { lista = val; break; }
+        }
       }
+      if (lista !== null) break;
     }
   }
-
-  // Apelidos de produto (kits): casa o bordado quando o nome do item e a chave
-  // são equivalentes segundo a tabela APELIDOS_PRODUTOS.
-  for (const [key, val] of Object.entries(bpm)) {
-    if (saoEquivalentesPorApelido(mb, key)) return val;
+  // 5) Apelidos de produto (kits)
+  if (lista === null) for (const [key, val] of Object.entries(bpm)) {
+    if (saoEquivalentesPorApelido(mb, key)) { lista = val; break; }
   }
 
-  return obs.bordadoGeral || null;
+  // Normaliza para array (retrocompatibilidade caso venha string)
+  if (lista == null) return obs.bordadoGeral || null;
+  const arr = Array.isArray(lista) ? lista : [lista];
+  if (!arr.length) return null;
+
+  // Distribui por unidade: 1ª peça pega o 1º bordado, 2ª o 2º, etc.
+  const u = parseInt(unidade, 10);
+  if (u && u >= 1) {
+    if (u <= arr.length) return arr[u - 1];
+    // Mais peças do que bordados informados: as peças extras ficam sem bordado
+    return null;
+  }
+  // Sem unidade (item único): se há só um bordado, retorna ele; se há vários, junta para visão geral
+  return arr.length === 1 ? arr[0] : arr.join(', ');
 }
 
 function calcStatus(tags, dataEnvio, isProntaEntrega, fulfillmentStatus) {
@@ -890,7 +907,7 @@ function mapItem(order, item, isDraft, listasCache, idx) {
   const modeloFinal = pick('modelo_override') || modeloBase;
   const colecaoCorFinal = pick('colecao_cor_override') || extrairColecaoCor(item.title, item.variant_title);
   const bordadoFinal = (ovItem && ovItem.bordado_override !== undefined && ovItem.bordado_override !== null)
-    ? ovItem.bordado_override : getBordado(obs, modeloBase);
+    ? ovItem.bordado_override : getBordado(obs, modeloBase, item._unidade);
   const dataEnvioFinal = pick('data_envio_override') || dataEnvio;
   const vendedoraFinal = pick('vendedora_override') || obs.vendedora || '—';
   const foiEditado = !!ovItem;
