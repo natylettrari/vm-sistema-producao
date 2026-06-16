@@ -160,6 +160,11 @@ async function initDB() {
   try {
     await pool.query(`ALTER TABLE listas_pe ADD COLUMN IF NOT EXISTS data_producao TEXT`);
   } catch(e) { console.error('ALTER listas_pe:', e.message); }
+  // Garante colunas de status manual e observação interna em itens_editados
+  try {
+    await pool.query(`ALTER TABLE itens_editados ADD COLUMN IF NOT EXISTS status_override TEXT`);
+    await pool.query(`ALTER TABLE itens_editados ADD COLUMN IF NOT EXISTS obs_interna TEXT`);
+  } catch(e) { console.error('ALTER itens_editados:', e.message); }
   // Cria um admin inicial se não houver nenhum usuário ainda
   try {
     const r = await pool.query(`SELECT COUNT(*)::int AS n FROM usuarios_v2`);
@@ -522,9 +527,20 @@ function _normApelido(s) {
 function saoEquivalentesPorApelido(a, b) {
   const na = _normApelido(a), nb = _normApelido(b);
   if (!na || !nb) return false;
+  // Palavras "vazias" que não distinguem produto (não contam no casamento)
+  const stop = new Set(['kit','de','da','do','e','ella','cafe','bege','preto','marinho','caramelo','rose']);
+  const palavrasSignificativas = nome => _normApelido(nome).split(' ').filter(w => w.length>2 && !stop.has(w));
+  // Um nome "casa" com um apelido do grupo se TODAS as palavras significativas do apelido
+  // estão presentes no nome (em qualquer ordem). Evita casar por fragmento solto.
+  const nomeCasaApelido = (nome, apelido) => {
+    const pa = palavrasSignificativas(apelido);
+    if (!pa.length) return false;
+    const pn = _normApelido(nome).split(' ');
+    return pa.every(w => pn.includes(w));
+  };
   return APELIDOS_PRODUTOS.some(grupo => {
-    const baterA = grupo.some(g => { const ng=_normApelido(g); return na.includes(ng) || ng.includes(na); });
-    const baterB = grupo.some(g => { const ng=_normApelido(g); return nb.includes(ng) || ng.includes(nb); });
+    const baterA = grupo.some(g => nomeCasaApelido(a, g));
+    const baterB = grupo.some(g => nomeCasaApelido(b, g));
     return baterA && baterB;
   });
 }
@@ -630,6 +646,18 @@ function limparVendedora(nome) {
   return nome ? nome.replace(/^(CONSULTORA|CONSULTOR|VENDEDORA|VENDEDOR|ATENDENTE|REP|REPRESENTANTE)\s+/i, '').trim() : null;
 }
 
+// Expande um item com quantidade > 1 em várias unidades de quantidade 1,
+// para que cada peça vire uma linha própria (e possa ter seu próprio bordado/status).
+function expandirQuantidade(item) {
+  const qtd = parseInt(item.quantity, 10) || 1;
+  if (qtd <= 1) return [item];
+  const unidades = [];
+  for (let k = 0; k < qtd; k++) {
+    unidades.push({ ...item, quantity: 1, _unidade: k + 1, _totalUnidades: qtd });
+  }
+  return unidades;
+}
+
 function normalizarData(str) {
   if (!str) return null;
   const d = str.replace(/[.\-]/g, '/').trim();
@@ -654,6 +682,20 @@ function parseObs(note) {
   const lines = note.split('\n').map(l => l.trim()).filter(Boolean);
   let vendedora=null, dataEnvio=null, bordadoGeral=null, isProntaEntrega=false;
   const bordadosPorModelo = {}, extras = [];
+
+  // Acumula bordados do mesmo modelo (ex: 2 pingentes com nomes diferentes viram "Joaquim, EVA")
+  const semBordadoRe = /^(sem\s*bordado|s\/bordado|sem|s\/|s\/b)$/i;
+  const addBordado = (key, val) => {
+    const limpo = (val == null || semBordadoRe.test(String(val).trim())) ? null : String(val).trim();
+    if (limpo == null) { if (!(key in bordadosPorModelo)) bordadosPorModelo[key] = null; return; }
+    if (bordadosPorModelo[key]) {
+      // Não duplica se já contém o mesmo valor
+      const jaTem = bordadosPorModelo[key].split(',').map(s=>s.trim().toLowerCase());
+      if (!jaTem.includes(limpo.toLowerCase())) bordadosPorModelo[key] += ', ' + limpo;
+    } else {
+      bordadosPorModelo[key] = limpo;
+    }
+  };
 
   for (let line of lines) {
     // Remove hífen ou traço no início da linha (ex: "-Mala Rodinha: BORDADO L")
@@ -686,7 +728,7 @@ function parseObs(note) {
       const val = mBordModelo[2].trim().replace(/^BORDADO[:\s]+/i,'').trim();
       const isModelo = MODELOS_MAP.some(m => key.includes(m.termo)) ||
         ['mala','mochila','bolsa','madison','louise','trocador','necessaire','porta','kit','alça','alca','frasqueira','pingente','kate','liz','cleo','cloé','cristal'].some(k => key.includes(k));
-      if (isModelo) { bordadosPorModelo[key] = val.match(/^(sem\s*bordado|s\/bordado|sem|s\/|s\/b)$/i) ? null : val; continue; }
+      if (isModelo) { addBordado(key, val); continue; }
     }
 
     // Formato solto: "MODELO na alça NOME" (personalização de alça, vira "Alça: NOME")
@@ -695,7 +737,7 @@ function parseObs(note) {
       const key = mAlca[1].trim().toLowerCase();
       const isModelo = MODELOS_MAP.some(m => key.includes(m.termo)) ||
         ['mala','mochila','bolsa','madison','louise','trocador','necessaire','porta','kit','frasqueira','pingente','kate','liz','cleo','cloé','cristal','documento','rodinha'].some(k => key.includes(k));
-      if (isModelo) { bordadosPorModelo[key] = 'Alça: ' + mAlca[2].trim(); continue; }
+      if (isModelo) { addBordado(key, 'Alça: ' + mAlca[2].trim()); continue; }
     }
 
     // Formato solto: "MODELO BORDADO VALOR" sem separador (ex: "Mala Rodinha BORDADO LA")
@@ -705,7 +747,7 @@ function parseObs(note) {
       const val = mBordSolto[2].trim();
       const isModelo = MODELOS_MAP.some(m => key.includes(m.termo)) ||
         ['mala','mochila','bolsa','madison','louise','trocador','necessaire','porta','kit','frasqueira','pingente','kate','liz','cleo','cloé','cristal','documento','rodinha'].some(k => key.includes(k));
-      if (isModelo) { bordadosPorModelo[key] = val.match(/^(sem\s*bordado|s\/bordado|sem|s\/|s\/b)$/i) ? null : val; continue; }
+      if (isModelo) { addBordado(key, val); continue; }
     }
     const m1b = line.match(/^(?:ENVIO|ENV|ENTREGA|ENVIAR)[:\s]+(?:DIA\s+)?(\d{1,2}[\/.\-]\d{1,2}(?:[\/.\-]\d{2,4})?)/i);
     if (m1b && !dataEnvio) { dataEnvio = normalizarData(m1b[1]); continue; }
@@ -716,7 +758,7 @@ function parseObs(note) {
       let val = m2[2].trim().replace(/^BORDADO[:\s]+/i, '').trim();
       const isModelo = MODELOS_MAP.some(m => key.includes(m.termo)) ||
         ['mala','mochila','bolsa','madison','louise','trocador','necessaire','porta','kit','alça','alca','frasqueira','pingente','kate','liz','cleo','cloé','cristal'].some(k => key.includes(k));
-      if (isModelo) { bordadosPorModelo[key] = val.match(/^(sem\s*bordado|s\/bordado|sem|s\/|s\/b)$/i) ? null : val; continue; }
+      if (isModelo) { addBordado(key, val); continue; }
     }
     const m3 = line.match(/^BORDADO[:\s\-–]+(.+)/i);
     if (m3) { const v=m3[1].trim(); bordadoGeral = v.match(/^(sem\s*bordado|s\/bordado|sem|s\/|s\/b)$/i) ? null : v; continue; }
@@ -746,25 +788,18 @@ function getBordado(obs, modeloBase) {
     if (mb === key) return val;
   }
 
-  // Busca por inclusão — modeloBase contém a chave ou vice-versa
+  // Busca por inclusão — modeloBase contém a chave ou a chave contém o modeloBase,
+  // exigindo que a parte coincidente seja significativa (evita casar por fragmentos).
   for (const [key, val] of Object.entries(bpm)) {
-    if (mb.includes(key) || key.includes(mb)) return val;
+    if (key.length >= 4 && (mb.includes(key) || key.includes(mb))) return val;
   }
 
-  // Busca pela primeira palavra significativa do modelo
-  const primeiraPalavra = mb.split(' ').find(w => w.length > 2);
-  if (primeiraPalavra) {
-    for (const [key, val] of Object.entries(bpm)) {
-      if (key.includes(primeiraPalavra)) return val;
-    }
-  }
-
-  // Busca aproximada — remove acentos e compara
+  // Busca aproximada — remove acentos e compara nomes completos (não fragmentos)
   const removerAcentos = s => s.normalize('NFD').replace(/[\u0300-\u036f]/g,'');
   const mbSemAcento = removerAcentos(mb);
   for (const [key, val] of Object.entries(bpm)) {
     const keySemAcento = removerAcentos(key);
-    if (mbSemAcento.includes(keySemAcento) || keySemAcento.includes(mbSemAcento.split(' ')[0])) return val;
+    if (mbSemAcento.includes(keySemAcento) || keySemAcento.includes(mbSemAcento)) return val;
   }
 
   // Aliases — chaves alternativas que mapeiam para o modelo
@@ -867,6 +902,10 @@ function mapItem(order, item, isDraft, listasCache, idx) {
   if (statusItem && !['enviado','pronto','pronta_entrega'].includes(statusFinal)) {
     statusFinal = statusItem;
   }
+  // Status definido manualmente na edição do pedido tem prioridade sobre tudo
+  if (ovItem && ovItem.status_override) {
+    statusFinal = ovItem.status_override;
+  }
 
   return {
     id: isDraft ? 'D-'+order.id : order.id,
@@ -883,12 +922,14 @@ function mapItem(order, item, isDraft, listasCache, idx) {
     bordado: bordadoFinal,
     foiEditado: foiEditado,
     obsCliente: obs.obsCliente || '—',
+    obsInterna: (ovItem && ovItem.obs_interna) || '',
     noteRaw: order.note || '',
     status: statusFinal,
     isUrgente: obs.isUrgente || (order.tags||'').toLowerCase().includes('urgente'),
     isPrioridade: obs.isPrioridade || (order.tags||'').toLowerCase().includes('prioridade'),
     isDraft, isKitItem: item.isKitItem||false, kitOriginal: item.kitOriginal||null,
     tags: order.tags||'', quantidade: item.quantity||1,
+    unidade: item._unidade || null, totalUnidades: item._totalUnidades || null,
     listaNumero: lista ? lista.numero : null,
     listaDataProducao: lista ? lista.dataProducao : null,
   };
@@ -937,7 +978,9 @@ async function buscarTodosPedidos(token, params={}) {
     let __idx = 0;
     for (const i of o.line_items) {
       for (const ei of expandirKit(i)) {
-        lista.push(mapItem(o, ei, false, listasCache, __idx++));
+        for (const u of expandirQuantidade(ei)) {
+          lista.push(mapItem(o, u, false, listasCache, __idx++));
+        }
       }
     }
   }
@@ -950,7 +993,9 @@ async function buscarTodosPedidos(token, params={}) {
         let __idx = 0;
         for (const i of o.line_items) {
           for (const ei of expandirKit(i)) {
-            lista.push(mapItem(o, ei, true, listasCache, __idx++));
+            for (const u of expandirQuantidade(ei)) {
+              lista.push(mapItem(o, u, true, listasCache, __idx++));
+            }
           }
         }
       }
@@ -1477,6 +1522,14 @@ app.post('/api/pedido/:id/editar', exigirEdicao, async (req,res) => {
     if (campos.vendedora !== undefined) {
       historicoItens.push([id, numPedido, 'vendedora', dadosAtuais.vendedora_override||null, campos.vendedora, alteradoPor, chaveItem]);
       updates.vendedora_override = campos.vendedora;
+    }
+    if (campos.status !== undefined) {
+      historicoItens.push([id, numPedido, 'status', dadosAtuais.status_override||null, campos.status, alteradoPor, chaveItem]);
+      updates.status_override = campos.status || null;
+    }
+    if (campos.obsInterna !== undefined) {
+      historicoItens.push([id, numPedido, 'obs_interna', dadosAtuais.obs_interna||null, campos.obsInterna, alteradoPor, chaveItem]);
+      updates.obs_interna = campos.obsInterna || null;
     }
 
     // Salva overrides por ITEM
