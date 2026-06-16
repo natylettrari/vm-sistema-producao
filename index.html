@@ -990,13 +990,18 @@ function filtrar() {
   const de=gv('f-de');
   const ate=gv('f-ate');
   FILTRADOS=PEDIDOS.filter(p=>{
-    // Busca geral — procura em todos os campos
+    // Busca geral
     if(busca) {
-      const campos=[p.numero,p.modeloBase,p.modelo,p.colecaoCor,p.bordado,p.vendedora,p.dataEnvio,p.obsCliente,p.orderId,p.cliente,p.email].map(x=>(x||'').toLowerCase());
       const numeroLimpo=(p.numero||'').toLowerCase().replace(/[^0-9]/g,'');
-      const casaTexto = campos.some(c=>c.includes(busca));
-      const casaNumero = buscaNum && numeroLimpo.includes(buscaNum);
-      if(!casaTexto && !casaNumero) return false;
+      // Se a pessoa digitou SÓ números, busca apenas pelo número do pedido (evita falsos positivos
+      // de números soltos em observações, valores, etc.)
+      const soNumeros = /^[#\s]*\d+[#\s]*$/.test(buscaRaw);
+      if (soNumeros) {
+        if (!(buscaNum && numeroLimpo === buscaNum)) return false;
+      } else {
+        const campos=[p.numero,p.modeloBase,p.modelo,p.colecaoCor,p.bordado,p.vendedora,p.dataEnvio,p.obsCliente,p.orderId,p.cliente,p.email].map(x=>(x||'').toLowerCase());
+        if(!campos.some(c=>c.includes(busca))) return false;
+      }
     }
     if(mod&&!(p.modeloBase||'').toLowerCase().includes(mod)&&!(p.modelo||'').toLowerCase().includes(mod)) return false;
     if(col&&!colecaoCombina(p.colecaoCor, col)) return false;
@@ -3852,7 +3857,7 @@ async function abrirEdicao(itemId, orderId, numero, e) {
   modal.className = 'cal-modal';
   modal.id = 'modal-edicao';
 
-  const CAMPOS_LABEL = { modelo:'Modelo', colecao_cor:'Cor / Coleção', bordado:'Bordado', data_envio:'Data de envio', vendedora:'Vendedora' };
+  const CAMPOS_LABEL = { modelo:'Modelo', colecao_cor:'Cor / Coleção', bordado:'Bordado', data_envio:'Data de envio', vendedora:'Vendedora', status:'Status', obs_interna:'Observação interna' };
 
   modal.innerHTML = `
     <div class="cal-modal-box" style="max-width:520px;width:95vw">
@@ -3885,6 +3890,17 @@ async function abrirEdicao(itemId, orderId, numero, e) {
           <label style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);display:block;margin-bottom:4px">Vendedora</label>
           <input id="ed-vendedora" value="${pedido.vendedora!=='—'?pedido.vendedora:''}" style="width:100%;font-size:12px;padding:7px 10px;border-radius:7px;border:1px solid var(--border2);background:var(--bg2);font-family:var(--sans)">
         </div>
+        <div>
+          <label style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);display:block;margin-bottom:4px">Status</label>
+          <select id="ed-status" style="width:100%;font-size:12px;padding:7px 10px;border-radius:7px;border:1px solid var(--border2);background:var(--bg2);font-family:var(--sans)">
+            ${[['','— (automático)'],['aguardando','Aguardando'],['em_producao','Em produção'],['pronto','Pronto p/ envio'],['atrasado','Atrasado'],['pronta_entrega','Pronta entrega'],['enviado','Enviado']].map(([v,l])=>`<option value="${v}" ${pedido.status===v?'selected':''}>${l}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+
+      <div style="margin-bottom:16px">
+        <label style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--text3);display:block;margin-bottom:4px">Observação interna (consultoras / produção)</label>
+        <textarea id="ed-obs-interna" rows="2" placeholder="Anotações internas sobre este pedido" style="width:100%;font-size:12px;padding:7px 10px;border-radius:7px;border:1px solid var(--border2);background:var(--bg2);font-family:var(--sans);resize:vertical">${(pedido.obsInterna||'').replace(/</g,'&lt;')}</textarea>
       </div>
 
       <div style="display:flex;gap:8px;margin-bottom:${historico.length?'16px':'0'}">
@@ -3988,12 +4004,16 @@ async function salvarEdicao(itemId, orderId, numero) {
   const novoBordado = document.getElementById('ed-bordado').value.trim();
   const novaData = document.getElementById('ed-data').value.trim();
   const novaVendedora = document.getElementById('ed-vendedora').value.trim();
+  const novoStatus = document.getElementById('ed-status').value;
+  const novaObsInterna = document.getElementById('ed-obs-interna').value.trim();
 
   if (novoModelo !== pedido.modeloBase) campos.modelo = novoModelo;
   if (novaColecao !== pedido.colecaoCor) campos.colecaoCor = novaColecao;
   if ((novoBordado||null) !== (pedido.bordado||null)) campos.bordado = novoBordado || null;
   if (novaData !== (pedido.dataEnvio !== '—' ? pedido.dataEnvio : '')) campos.dataEnvio = novaData || null;
   if (novaVendedora !== (pedido.vendedora !== '—' ? pedido.vendedora : '')) campos.vendedora = novaVendedora || null;
+  if (novoStatus !== (pedido.status||'')) campos.status = novoStatus || null;
+  if (novaObsInterna !== (pedido.obsInterna||'')) campos.obsInterna = novaObsInterna || null;
 
   if (!Object.keys(campos).length) { toast('Nenhuma alteração feita'); fecharModalEdicao(); return; }
 
@@ -4010,6 +4030,8 @@ async function salvarEdicao(itemId, orderId, numero) {
     if (campos.bordado !== undefined) pedido.bordado = campos.bordado;
     if (campos.dataEnvio !== undefined) pedido.dataEnvio = campos.dataEnvio || '—';
     if (campos.vendedora !== undefined) pedido.vendedora = campos.vendedora || '—';
+    if (campos.status !== undefined) pedido.status = campos.status || pedido.status;
+    if (campos.obsInterna !== undefined) pedido.obsInterna = campos.obsInterna || '';
     pedido.foiEditado = true;
 
     fecharModalEdicao();
