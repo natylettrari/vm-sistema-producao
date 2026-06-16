@@ -507,6 +507,16 @@ input[type=checkbox]{accent-color:var(--rose);cursor:pointer}
       <div class="sb-div"></div>
 
       <div class="sb-s">
+        <div class="sb-ttl">Lista de produção</div>
+        <select class="sb-sel" id="ficha-lista" onchange="carregarFicha()">
+          <option value="">Todas as listas</option>
+        </select>
+        <div style="font-size:10px;color:var(--text3);margin-top:4px;line-height:1.4">Mostra só os itens da lista escolhida — útil para cortar um lote novo sem repetir o que já foi cortado.</div>
+      </div>
+
+      <div class="sb-div"></div>
+
+      <div class="sb-s">
         <div class="sb-ttl">Modelo</div>
         <div style="position:relative">
           <input type="text" id="ficha-modelo-input" placeholder="Ex: Madison"
@@ -2609,7 +2619,11 @@ function gerarListaFiltros() {
       return true;
     });
   }
-  if(mTags.length) peds=peds.filter(p=>mTags.some(m=>(p.modeloBase||'').toLowerCase().includes(m)||(p.modelo||'').toLowerCase().includes(m)));
+  if(mTags.length) peds=peds.filter(p=>mTags.some(m=>{
+    const mb=(p.modeloBase||'').toLowerCase();
+    if(mb) return mb===m;
+    return (p.modelo||'').toLowerCase()===m; // fallback se não houver modeloBase
+  }));
   if(vend) peds=peds.filter(p=>(p.vendedora||'').toLowerCase().includes(vend));
   if(col) peds=peds.filter(p=>colecaoCombina(p.colecaoCor, col));
   if(stF.length) peds=peds.filter(p=>stF.includes(p.status));
@@ -3482,8 +3496,30 @@ async function carregarFicha() {
   document.getElementById('sim-box').innerHTML='';
   const colecao = (document.getElementById('ficha-colecao')||{value:''}).value.toLowerCase();
 
+  // Preenche o seletor de listas (mantém a seleção atual)
+  const selLista = document.getElementById('ficha-lista');
+  if (selLista) {
+    const atual = selLista.value;
+    const numeros = [...new Set(PEDIDOS.map(p => p.listaNumero).filter(Boolean))]
+      .sort((a,b) => String(a).localeCompare(String(b), undefined, {numeric:true}));
+    const opcoes = ['<option value="">Todas as listas</option>']
+      .concat(numeros.map(n => {
+        const l = (LISTAS||[]).find(x => String(x.numero) === String(n));
+        const dataProd = l && l.dataProducao ? ' · sai ' + l.dataProducao : '';
+        return `<option value="${n}">Lista #${n}${dataProd}</option>`;
+      }));
+    selLista.innerHTML = opcoes.join('');
+    selLista.value = atual; // restaura seleção se ainda existir
+  }
+
   // Filtrar localmente usando PEDIDOS já carregados
   let peds = [...PEDIDOS];
+
+  // Filtro por lista de produção — mostra só os itens da lista escolhida
+  const fLista = selLista ? selLista.value : '';
+  if (fLista) {
+    peds = peds.filter(p => String(p.listaNumero) === String(fLista));
+  }
 
   // Filtro por lote (normaliza para dia/mês, ignorando o ano)
   if (FICHA_LOTE) {
@@ -3514,7 +3550,7 @@ async function carregarFicha() {
   }
 
   // Filtro por modelos
-  if (FICHA_MODELOS.length) peds = peds.filter(p => FICHA_MODELOS.some(m => (p.modeloBase||'').toLowerCase().includes(m.toLowerCase())));
+  if (FICHA_MODELOS.length) peds = peds.filter(p => FICHA_MODELOS.some(m => (p.modeloBase||'').toLowerCase() === m.toLowerCase()));
 
   // Filtro por tipo
   if (FICHA_TIPO !== 'todos') peds = peds.filter(p => getTipo(p.modeloBase) === FICHA_TIPO);
@@ -3540,9 +3576,9 @@ async function carregarFicha() {
       });
     }));
     // Aplica os mesmos filtros da ficha às peças PE
-    if (FICHA_MODELOS.length) pecasPE = pecasPE.filter(p => FICHA_MODELOS.some(m => (p.modeloBase||'').toLowerCase().includes(m.toLowerCase())));
+    if (FICHA_MODELOS.length) pecasPE = pecasPE.filter(p => FICHA_MODELOS.some(m => (p.modeloBase||'').toLowerCase() === m.toLowerCase()));
     if (FICHA_TIPO !== 'todos') pecasPE = pecasPE.filter(p => getTipo(p.modeloBase) === FICHA_TIPO);
-    if (FICHA_LOTE || fDe || fAte) pecasPE = []; // PE não tem data de envio de pedido; quando filtra por lote/período, não entra
+    if (FICHA_LOTE || fDe || fAte || fLista) pecasPE = []; // quando filtra por lote/período/lista específica, PE não entra
     if (colecao) pecasPE = pecasPE.filter(p => colecaoCombina(p.colecaoCor, colecao));
   }
 
@@ -3611,7 +3647,7 @@ async function carregarFicha() {
   const totPE = pecasPE.length;
   const fmtBR = s => { if(!s) return ''; const p=s.split('-'); return p[2]+'/'+p[1]+'/'+p[0]; };
   const periodoLabel = (fDe||fAte) ? ('Período ' + (fDe?fmtBR(fDe):'…') + ' a ' + (fAte?fmtBR(fAte):'…')) : '';
-  const tituloFiltro = [FICHA_LOTE?'Lote '+FICHA_LOTE:'', periodoLabel, FICHA_MODELOS.join(', '), FICHA_TIPO!=='todos'?(FICHA_TIPO==='bolsa'?'Bolsas':'Acessórios'):''].filter(Boolean).join(' · ') || 'Todos os pedidos';
+  const tituloFiltro = [fLista?'Lista #'+fLista:'', FICHA_LOTE?'Lote '+FICHA_LOTE:'', periodoLabel, FICHA_MODELOS.join(', '), FICHA_TIPO!=='todos'?(FICHA_TIPO==='bolsa'?'Bolsas':'Acessórios'):''].filter(Boolean).join(' · ') || 'Todos os pedidos';
 
   // Identifica quais listas entram neste corte (produção normais + pronta entrega)
   const listasNorm = [...new Set(peds.map(p => p.listaNumero).filter(Boolean))].sort();
@@ -3790,6 +3826,9 @@ function limparFichaFiltros() {
   setFichaTipo('todos', document.getElementById('ficha-tipo-todos'));
   document.getElementById('ficha-colecao').value = '';
   document.getElementById('ficha-modelo-input').value = '';
+  const sl = document.getElementById('ficha-lista'); if (sl) sl.value = '';
+  const fde = document.getElementById('ficha-de'); if (fde) fde.value = '';
+  const fate = document.getElementById('ficha-ate'); if (fate) fate.value = '';
 }
 
 // ── Bordados ──────────────────────────────────────────────────────────────────
