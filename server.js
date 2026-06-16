@@ -645,6 +645,18 @@ function parseObs(note) {
     const m1 = line.match(/^([A-ZÀ-Úa-zà-ú\s]+?)\s*[-–]\s*(?:ENVIO|ENV|ENTREGA|ENVIAR)\s+(?:DIA\s+)?(\d{1,2}[\/.\-]\d{1,2}(?:[\/.\-]\d{2,4})?)/i);
     if (m1) { vendedora = limparVendedora(m1[1].trim()); dataEnvio = normalizarData(m1[2]); continue; }
 
+    // Vendedora sem data: "NOME - ENVIO ..." ou "NOME - ENTREGA ..." (ex: "LAURA - ENVIO PRONTA ENTREGA").
+    // Captura o NOME como vendedora mesmo quando não há data na sequência.
+    const m1c = line.match(/^([A-ZÀ-Úa-zà-ú\s]+?)\s*[-–]\s*(?:ENVIO|ENV|ENTREGA|ENVIAR)\b/i);
+    if (m1c && !vendedora) {
+      const cand = limparVendedora(m1c[1].trim());
+      const candLow = (cand||'').toLowerCase().trim();
+      // Não captura se o "nome" for na verdade um modelo ou palavra de controle (pronta/entrega/envio)
+      const ehModelo = cand && ['mala','mochila','bolsa','madison','louise','trocador','necessaire','porta','kit','frasqueira','pingente','kate','liz','cleo','cloé','cristal','alça','alca','laço','laco','capa','organizador','saquinho','documento','rodinha'].some(k => candLow.includes(k));
+      const ehControle = ['pronta','entrega','envio','enviar','env','pronta entrega','pronta-entrega'].includes(candLow);
+      if (cand && !ehModelo && !ehControle) { vendedora = cand; continue; }
+    }
+
     // Padrão: MODELO - BORDADO X (ex: "CRISTAL PP - BORDADO LA")
     const mBordModelo = line.match(/^([A-ZÀ-Úa-zà-ú\s0-9]+?)\s*[-–]\s*(?:BORDADO|INICIAL|NOME)[:\s]+(.+)/i);
     if (mBordModelo) {
@@ -696,6 +708,9 @@ function parseObs(note) {
   }
   const isUrgente = note.match(/urgente/i) !== null;
   const isPrioridade = note.match(/prioridade/i) !== null;
+  // Detecta "pronta entrega" em qualquer lugar do texto (não só numa linha isolada).
+  // Cobre formatos como "LAURA - ENVIO PRONTA ENTREGA", "envio: pronta entrega", etc.
+  if (!isProntaEntrega && note.match(/pronta[\s\-]*entrega/i)) isProntaEntrega = true;
   return { vendedora, dataEnvio, bordadoGeral, bordadosPorModelo, obsCliente: extras.join(' | ')||null, isProntaEntrega, isUrgente, isPrioridade };
 }
 
