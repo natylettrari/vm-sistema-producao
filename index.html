@@ -3576,7 +3576,7 @@ async function carregarFicha() {
       const modelo = p.modeloBase || 'Sem modelo';
       const cor = p.colecaoCor || 'Sem cor';
       if (!ficha[modelo]) ficha[modelo] = {};
-      ficha[modelo][cor] = (ficha[modelo][cor]||0) + (p.quantidade||1);
+      ficha[modelo][cor] = (ficha[modelo][cor]||0) + 1;
     });
     // Peças PE: dentro do modelo, item separado marcado com a lista
     pecasPE.forEach(p => {
@@ -3592,7 +3592,7 @@ async function carregarFicha() {
       const cor = p.colecaoCor || 'Sem cor';
       const modelo = p.modeloBase || 'Sem modelo';
       if (!ficha[cor]) ficha[cor] = {};
-      ficha[cor][modelo] = (ficha[cor][modelo]||0) + (p.quantidade||1);
+      ficha[cor][modelo] = (ficha[cor][modelo]||0) + 1;
     });
     // Peças PE: dentro da cor, item separado marcado com a lista
     pecasPE.forEach(p => {
