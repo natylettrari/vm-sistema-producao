@@ -680,27 +680,6 @@ function getTipo(modeloBase) {
 // Compara coleção/cor de forma flexível: ignora o separador "·" e exige que
 // todas as palavras do filtro estejam presentes no valor do item.
 // Ex: filtro "Le Petit · Bege" casa com "Le Petit Bege", "Bege - Le Petit", etc.
-// Apelidos de produto (kits): nomes diferentes tratados como o mesmo produto.
-// Só estes casos específicos — não faz busca genérica (para não confundir Madison/Madison Mini).
-const APELIDOS_PRODUTOS = [
-  ['kit porta look', 'kit organizadores porta look'],
-  ['kit cristal', 'kit organizadores cristal'],
-  ['kit documentos', 'kit porta documentos'],
-];
-function _normApelido(s) {
-  return (s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,' ').replace(/\s+/g,' ').trim();
-}
-// Diz se o termo buscado casa com o nome do item por meio de um apelido cadastrado.
-function apelidoCombina(nomeItem, busca) {
-  const ni = _normApelido(nomeItem), nb = _normApelido(busca);
-  if (!ni || !nb) return false;
-  return APELIDOS_PRODUTOS.some(grupo => {
-    const buscaNoGrupo = grupo.some(g => { const ng=_normApelido(g); return nb.includes(ng) || ng.includes(nb); });
-    const itemNoGrupo  = grupo.some(g => { const ng=_normApelido(g); return ni.includes(ng) || ng.includes(ni); });
-    return buscaNoGrupo && itemNoGrupo;
-  });
-}
-
 function colecaoCombina(valorItem, filtro) {
   if (!filtro) return true;
   const norm = s => (s||'').toLowerCase().replace(/·/g,' ').replace(/\s+/g,' ').trim();
@@ -1019,7 +998,7 @@ function filtrar() {
       const casaNumero = buscaNum && numeroLimpo.includes(buscaNum);
       if(!casaTexto && !casaNumero) return false;
     }
-    if(mod&&!(p.modeloBase||'').toLowerCase().includes(mod)&&!(p.modelo||'').toLowerCase().includes(mod)&&!apelidoCombina(p.modeloBase,mod)&&!apelidoCombina(p.modelo,mod)) return false;
+    if(mod&&!(p.modeloBase||'').toLowerCase().includes(mod)&&!(p.modelo||'').toLowerCase().includes(mod)) return false;
     if(col&&!colecaoCombina(p.colecaoCor, col)) return false;
     if(vend&&!(p.vendedora||'').toLowerCase().includes(vend)) return false;
     if(st==='__prioridade'){ if(!p.isPrioridade) return false; }
@@ -2625,7 +2604,7 @@ function gerarListaFiltros() {
       return true;
     });
   }
-  if(mTags.length) peds=peds.filter(p=>mTags.some(m=>(p.modeloBase||'').toLowerCase().includes(m)||(p.modelo||'').toLowerCase().includes(m)||apelidoCombina(p.modeloBase,m)||apelidoCombina(p.modelo,m)));
+  if(mTags.length) peds=peds.filter(p=>mTags.some(m=>(p.modeloBase||'').toLowerCase().includes(m)||(p.modelo||'').toLowerCase().includes(m)));
   if(vend) peds=peds.filter(p=>(p.vendedora||'').toLowerCase().includes(vend));
   if(col) peds=peds.filter(p=>colecaoCombina(p.colecaoCor, col));
   if(stF.length) peds=peds.filter(p=>stF.includes(p.status));
@@ -3530,7 +3509,7 @@ async function carregarFicha() {
   }
 
   // Filtro por modelos
-  if (FICHA_MODELOS.length) peds = peds.filter(p => FICHA_MODELOS.some(m => (p.modeloBase||'').toLowerCase().includes(m.toLowerCase()) || apelidoCombina(p.modeloBase, m)));
+  if (FICHA_MODELOS.length) peds = peds.filter(p => FICHA_MODELOS.some(m => (p.modeloBase||'').toLowerCase().includes(m.toLowerCase())));
 
   // Filtro por tipo
   if (FICHA_TIPO !== 'todos') peds = peds.filter(p => getTipo(p.modeloBase) === FICHA_TIPO);
@@ -3556,7 +3535,7 @@ async function carregarFicha() {
       });
     }));
     // Aplica os mesmos filtros da ficha às peças PE
-    if (FICHA_MODELOS.length) pecasPE = pecasPE.filter(p => FICHA_MODELOS.some(m => (p.modeloBase||'').toLowerCase().includes(m.toLowerCase()) || apelidoCombina(p.modeloBase, m)));
+    if (FICHA_MODELOS.length) pecasPE = pecasPE.filter(p => FICHA_MODELOS.some(m => (p.modeloBase||'').toLowerCase().includes(m.toLowerCase())));
     if (FICHA_TIPO !== 'todos') pecasPE = pecasPE.filter(p => getTipo(p.modeloBase) === FICHA_TIPO);
     if (FICHA_LOTE || fDe || fAte) pecasPE = []; // PE não tem data de envio de pedido; quando filtra por lote/período, não entra
     if (colecao) pecasPE = pecasPE.filter(p => colecaoCombina(p.colecaoCor, colecao));
