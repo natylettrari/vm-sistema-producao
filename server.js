@@ -847,6 +847,58 @@ function getBordado(obs, modeloBase, unidade) {
   return arr.length === 1 ? arr[0] : arr.join(', ');
 }
 
+// Distribui os bordados entre as peças do MESMO modelo dentro de um pedido.
+// Ex: 3 pingentes + observação "Joaquim / EVA / Rizzo" -> 1ª=Joaquim, 2ª=EVA, 3ª=Rizzo.
+// Numera por posição entre peças do mesmo modelo (robusto mesmo com linhas e quantidades misturadas).
+// Respeita bordados editados manualmente (não sobrescreve quem tem override).
+function distribuirBordadosPorModelo(order, itensPedido) {
+  const obs = parseObs(order.note);
+  const bpm = obs.bordadosPorModelo || {};
+  // Agrupa itens por modeloBase, na ordem em que aparecem
+  const porModelo = {};
+  for (const it of itensPedido) {
+    const k = (it.modeloBase||'').toLowerCase();
+    (porModelo[k] = porModelo[k] || []).push(it);
+  }
+  for (const [modeloKey, itens] of Object.entries(porModelo)) {
+    // Acha a lista de bordados desse modelo (reusa a lógica do getBordado por unidade)
+    // Se só há 1 peça, mantém o que o getBordado já resolveu (não força).
+    if (itens.length <= 1) continue;
+    // Descobre a lista de bordados disponível para o modelo
+    const exemplo = getBordadoLista(obs, modeloKey);
+    if (!exemplo || !exemplo.length) continue;
+    let pos = 0;
+    for (const it of itens) {
+      // Não mexe em quem foi editado manualmente
+      if (it.foiEditado) { continue; }
+      it.bordado = pos < exemplo.length ? exemplo[pos] : null;
+      pos++;
+    }
+  }
+}
+
+// Retorna apenas a LISTA de bordados (array) que casa com o modelo, sem escolher unidade.
+function getBordadoLista(obs, modeloBase) {
+  const mb = (modeloBase||'').toLowerCase();
+  const bpm = obs.bordadosPorModelo || {};
+  const removerAcentos = s => s.normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+  const mbSemAcento = removerAcentos(mb);
+  let lista = null;
+  for (const [key, val] of Object.entries(bpm)) { if (mb === key) { lista = val; break; } }
+  if (lista === null) for (const [key, val] of Object.entries(bpm)) {
+    if (key.length >= 4 && (mb.includes(key) || key.includes(mb))) { lista = val; break; }
+  }
+  if (lista === null) for (const [key, val] of Object.entries(bpm)) {
+    const keySemAcento = removerAcentos(key);
+    if (mbSemAcento.includes(keySemAcento) || keySemAcento.includes(mbSemAcento)) { lista = val; break; }
+  }
+  if (lista === null) for (const [key, val] of Object.entries(bpm)) {
+    if (saoEquivalentesPorApelido(mb, key)) { lista = val; break; }
+  }
+  if (lista == null) return null;
+  return Array.isArray(lista) ? lista : [lista];
+}
+
 function calcStatus(tags, dataEnvio, isProntaEntrega, fulfillmentStatus) {
   const t = (tags||'').toLowerCase();
   if (fulfillmentStatus === 'fulfilled') return 'enviado';
@@ -993,13 +1045,16 @@ async function buscarTodosPedidos(token, params={}) {
   let lista = [];
   for (const o of allOrders) {
     let __idx = 0;
+    const itensPedido = [];
     for (const i of o.line_items) {
       for (const ei of expandirKit(i)) {
         for (const u of expandirQuantidade(ei)) {
-          lista.push(mapItem(o, u, false, listasCache, __idx++));
+          itensPedido.push(mapItem(o, u, false, listasCache, __idx++));
         }
       }
     }
+    distribuirBordadosPorModelo(o, itensPedido);
+    lista.push(...itensPedido);
   }
 
   try {
@@ -1008,13 +1063,16 @@ async function buscarTodosPedidos(token, params={}) {
       const dd = await dr.json();
       for (const o of dd.draft_orders||[]) {
         let __idx = 0;
+        const itensPedido = [];
         for (const i of o.line_items) {
           for (const ei of expandirKit(i)) {
             for (const u of expandirQuantidade(ei)) {
-              lista.push(mapItem(o, u, true, listasCache, __idx++));
+              itensPedido.push(mapItem(o, u, true, listasCache, __idx++));
             }
           }
         }
+        distribuirBordadosPorModelo(o, itensPedido);
+        lista.push(...itensPedido);
       }
     }
   } catch(e) {}
