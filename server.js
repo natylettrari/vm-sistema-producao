@@ -507,6 +507,28 @@ app.get('/auth/callback', async (req, res) => {
 function shopHeaders(t) { return { 'X-Shopify-Access-Token': t, 'Content-Type': 'application/json' }; }
 
 // ── Modelos ───────────────────────────────────────────────────────────────────
+// Apelidos de produtos: nomes diferentes que devem ser tratados como o MESMO produto.
+// Cada grupo lista todas as formas equivalentes (em minúsculas, sem acento).
+// Para adicionar um novo apelido, basta incluir uma nova linha com as variações.
+const APELIDOS_PRODUTOS = [
+  ['kit porta look', 'kit organizadores porta look'],
+  ['kit cristal', 'kit organizadores cristal'],
+  ['kit documentos', 'kit porta documentos'],
+];
+// Verifica se dois nomes são equivalentes segundo a tabela de apelidos.
+function _normApelido(s) {
+  return (s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,' ').replace(/\s+/g,' ').trim();
+}
+function saoEquivalentesPorApelido(a, b) {
+  const na = _normApelido(a), nb = _normApelido(b);
+  if (!na || !nb) return false;
+  return APELIDOS_PRODUTOS.some(grupo => {
+    const baterA = grupo.some(g => { const ng=_normApelido(g); return na.includes(ng) || ng.includes(na); });
+    const baterB = grupo.some(g => { const ng=_normApelido(g); return nb.includes(ng) || ng.includes(nb); });
+    return baterA && baterB;
+  });
+}
+
 const MODELOS_MAP = [
   { chave:'Madison Mini', termo:'madison mini' },
   { chave:'Madison', termo:'madison' },
@@ -762,6 +784,12 @@ function getBordado(obs, modeloBase) {
         if (alts.some(a => key.includes(a)) || key.includes(modelo)) return val;
       }
     }
+  }
+
+  // Apelidos de produto (kits): casa o bordado quando o nome do item e a chave
+  // são equivalentes segundo a tabela APELIDOS_PRODUTOS.
+  for (const [key, val] of Object.entries(bpm)) {
+    if (saoEquivalentesPorApelido(mb, key)) return val;
   }
 
   return obs.bordadoGeral || null;
