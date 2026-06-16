@@ -696,8 +696,8 @@ function parseObs(note) {
         ['mala','mochila','bolsa','madison','louise','trocador','necessaire','porta','kit','alça','alca','frasqueira','pingente','kate','liz','cleo','cloé','cristal'].some(k => key.includes(k));
       if (isModelo) { bordadosPorModelo[key] = val.match(/^(sem\s*bordado|s\/bordado|sem|s\/|s\/b)$/i) ? null : val; continue; }
     }
-    const m3 = line.match(/^BORDADO\s+(.+)/i);
-    if (m3) { bordadoGeral = m3[1].trim(); continue; }
+    const m3 = line.match(/^BORDADO[:\s\-–]+(.+)/i);
+    if (m3) { const v=m3[1].trim(); bordadoGeral = v.match(/^(sem\s*bordado|s\/bordado|sem|s\/|s\/b)$/i) ? null : v; continue; }
     const m4 = line.match(/NOME\s+AL[CÇ]A[:\s]+(.+)/i);
     if (m4) { bordadoGeral = m4[1].trim(); continue; }
     const m5 = line.match(/^NOME[:\s]+(.+)/i);
