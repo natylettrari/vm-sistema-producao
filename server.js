@@ -633,10 +633,14 @@ function expandirKit(item) {
   if (title.toLowerCase().includes('documento')) return [item];
   // Kits de SEO que são UM produto só (a palavra "organizadores" é só do site, não é peça):
   // "Kit Organizadores Cristal", "Kit Organizadores Porta Look" → não quebrar.
+  // MAS: se o título traz uma LISTA de peças (vírgulas ou " e "), é um kit de verdade
+  // com vários produtos (ex: "Kit Bolsas ... Mala, Kate, Mochila e Kit Cristal") → deve quebrar.
   const tl = title.toLowerCase();
-  if (tl.includes('organizadores cristal') || tl.includes('organizador cristal') ||
+  const temListaDePecas = /,/.test(tl) || /\se\s/.test(tl);
+  if (!temListaDePecas && (
+      tl.includes('organizadores cristal') || tl.includes('organizador cristal') ||
       tl.includes('organizadores porta look') || tl.includes('organizador porta look') ||
-      tl.includes('kit cristal') || tl.includes('kit porta look')) {
+      tl.includes('kit cristal') || tl.includes('kit porta look'))) {
     return [item];
   }
   if (!title.toLowerCase().includes('kit')) return [item];
@@ -644,6 +648,12 @@ function expandirKit(item) {
   const partes = parteDesc.split(/,|\se\s/i).map(p => p.trim()).filter(p => p.length > 2);
   const itens = [];
   for (const parte of partes) {
+    // Cristal é tratado por função própria (não está no MODELOS_MAP)
+    const cristal = extrairModeloCristal(parte);
+    if (cristal) {
+      itens.push({ ...item, title: cristal + ' ' + extrairCorDoTitulo(title), isKitItem: true, kitOriginal: title });
+      continue;
+    }
     const m = MODELOS_MAP.find(m => parte.toLowerCase().includes(m.termo));
     if (m) itens.push({ ...item, title: m.chave + ' ' + extrairCorDoTitulo(title), isKitItem: true, kitOriginal: title });
   }
