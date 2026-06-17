@@ -480,18 +480,14 @@ input[type=checkbox]{accent-color:var(--rose);cursor:pointer}
 
       <div class="sb-s" style="background:var(--rose-ll);border:1px solid var(--rose);border-radius:10px;padding:12px 14px;margin-bottom:4px">
         <div class="sb-ttl" style="color:var(--rose);display:flex;align-items:center;gap:6px;margin-bottom:2px">✂️ Cortar por lista</div>
-        <div style="font-size:10px;color:var(--text2);margin-bottom:8px;line-height:1.4">Busque pelo número da lista ou pelo modelo (ex: "Madison" ou "0003") e gere a ficha só dela.</div>
+        <div style="font-size:10px;color:var(--text2);margin-bottom:8px;line-height:1.4">Busque pelo número da lista ou pelo modelo (ex: "Madison" ou "0003"). Pode escolher várias para cortar juntas.</div>
         <div style="position:relative">
           <input type="text" id="ficha-lista-input" placeholder="Buscar lista ou modelo..." autocomplete="off"
             oninput="filtrarListaSugestoes(this.value)" onfocus="filtrarListaSugestoes(this.value)"
             style="width:100%;font-size:12px;padding:7px 10px;border-radius:7px;border:1px solid var(--rose);background:var(--bg2);color:var(--text);font-family:var(--sans)">
           <div id="ficha-lista-sugestoes" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--bg2);border:1px solid var(--rose);border-radius:7px;margin-top:3px;z-index:120;max-height:240px;overflow-y:auto;box-shadow:0 4px 12px rgba(0,0,0,.12)"></div>
         </div>
-        <div id="ficha-lista-sel" style="display:none;margin-top:8px;background:var(--rose);color:#fff;padding:6px 11px;border-radius:7px;font-size:12px;align-items:center;justify-content:space-between">
-          <span id="ficha-lista-sel-label"></span>
-          <span onclick="limparFichaLista()" style="cursor:pointer;font-size:15px;margin-left:8px">×</span>
-        </div>
-        <input type="hidden" id="ficha-lista">
+        <div id="ficha-lista-chips" style="display:flex;flex-wrap:wrap;gap:4px;margin-top:8px"></div>
       </div>
 
       <div class="sb-div"></div>
@@ -3513,7 +3509,8 @@ function fichaDaLista(numero) {
   const mi = document.getElementById('ficha-modelo-input'); if (mi) mi.value = '';
   const fde = document.getElementById('ficha-de'); if (fde) fde.value = '';
   const fate = document.getElementById('ficha-ate'); if (fate) fate.value = '';
-  // Carrega a ficha e então seleciona a lista pedida (usa o seletor de busca)
+  // Carrega a ficha e então seleciona só a lista pedida (zera seleção anterior)
+  FICHA_LISTAS = [];
   carregarFicha().then(() => {
     selecionarFichaLista(String(numero));
   });
@@ -3528,9 +3525,10 @@ async function carregarFicha() {
   let peds = [...PEDIDOS];
 
   // Filtro por lista de produção — mostra só os itens da lista escolhida
-  const fLista = (document.getElementById('ficha-lista')||{value:''}).value;
-  if (fLista) {
-    peds = peds.filter(p => String(p.listaNumero) === String(fLista));
+  const fListas = FICHA_LISTAS.slice();
+  const fLista = fListas.length ? fListas.join(',') : ''; // usado para título/condições
+  if (fListas.length) {
+    peds = peds.filter(p => fListas.includes(String(p.listaNumero)));
   }
 
   // Filtro por lote (normaliza para dia/mês, ignorando o ano)
@@ -3659,7 +3657,7 @@ async function carregarFicha() {
   const totPE = pecasPE.length;
   const fmtBR = s => { if(!s) return ''; const p=s.split('-'); return p[2]+'/'+p[1]+'/'+p[0]; };
   const periodoLabel = (fDe||fAte) ? ('Período ' + (fDe?fmtBR(fDe):'…') + ' a ' + (fAte?fmtBR(fAte):'…')) : '';
-  const tituloFiltro = [fLista?'Lista #'+fLista:'', FICHA_LOTE?'Lote '+FICHA_LOTE:'', periodoLabel, FICHA_MODELOS.join(', '), FICHA_TIPO!=='todos'?(FICHA_TIPO==='bolsa'?'Bolsas':'Acessórios'):''].filter(Boolean).join(' · ') || 'Todos os pedidos';
+  const tituloFiltro = [fListas.length?('Lista'+(fListas.length>1?'s':'')+' #'+fListas.join(', #')):'', FICHA_LOTE?'Lote '+FICHA_LOTE:'', periodoLabel, FICHA_MODELOS.join(', '), FICHA_TIPO!=='todos'?(FICHA_TIPO==='bolsa'?'Bolsas':'Acessórios'):''].filter(Boolean).join(' · ') || 'Todos os pedidos';
 
   // Identifica quais listas entram neste corte (produção normais + pronta entrega)
   const listasNorm = [...new Set(peds.map(p => p.listaNumero).filter(Boolean))].sort();
@@ -3776,7 +3774,7 @@ function filtrarListaSugestoes(val) {
   const box = document.getElementById('ficha-lista-sugestoes');
   if (!box) return;
   const termo = (val||'').toLowerCase().trim();
-  let listas = _listasDisponiveis();
+  let listas = _listasDisponiveis().filter(l => !FICHA_LISTAS.includes(l.numero));
   if (termo) {
     listas = listas.filter(l =>
       l.numero.toLowerCase().includes(termo) ||
@@ -3801,25 +3799,42 @@ function filtrarListaSugestoes(val) {
   box.style.display = 'block';
 }
 
+let FICHA_LISTAS = []; // números das listas selecionadas para o corte
+
 function selecionarFichaLista(numero) {
-  const hidden = document.getElementById('ficha-lista');
-  if (hidden) hidden.value = numero;
+  numero = String(numero);
+  if (!FICHA_LISTAS.includes(numero)) FICHA_LISTAS.push(numero);
   const box = document.getElementById('ficha-lista-sugestoes');
   if (box) box.style.display = 'none';
   const input = document.getElementById('ficha-lista-input');
   if (input) input.value = '';
-  // Mostra o chip da lista selecionada
-  const sel = document.getElementById('ficha-lista-sel');
-  const lbl = document.getElementById('ficha-lista-sel-label');
-  const l = _listasDisponiveis().find(x => x.numero === String(numero));
-  if (lbl) lbl.textContent = 'Lista #' + numero + (l && l.modelos.length ? ' · ' + l.modelos.slice(0,3).join(', ') : '');
-  if (sel) sel.style.display = 'flex';
+  renderFichaListasChips();
   carregarFicha();
 }
 
+function removerFichaLista(numero) {
+  FICHA_LISTAS = FICHA_LISTAS.filter(n => n !== String(numero));
+  renderFichaListasChips();
+  carregarFicha();
+}
+
+function renderFichaListasChips() {
+  const wrap = document.getElementById('ficha-lista-chips');
+  if (!wrap) return;
+  const disp = _listasDisponiveis();
+  wrap.innerHTML = FICHA_LISTAS.map(n => {
+    const l = disp.find(x => x.numero === n);
+    const modelos = l && l.modelos.length ? ' · ' + l.modelos.slice(0,2).join(', ') + (l.modelos.length>2?'…':'') : '';
+    return `<span style="background:var(--rose);color:#fff;padding:5px 9px;border-radius:7px;font-size:11px;display:inline-flex;align-items:center;gap:6px">
+      Lista #${n}${modelos}
+      <span onclick="removerFichaLista('${n}')" style="cursor:pointer;font-size:14px;line-height:1">×</span>
+    </span>`;
+  }).join('');
+}
+
 function limparFichaLista() {
-  const hidden = document.getElementById('ficha-lista'); if (hidden) hidden.value = '';
-  const sel = document.getElementById('ficha-lista-sel'); if (sel) sel.style.display = 'none';
+  FICHA_LISTAS = [];
+  renderFichaListasChips();
   const input = document.getElementById('ficha-lista-input'); if (input) input.value = '';
   const box = document.getElementById('ficha-lista-sugestoes'); if (box) box.style.display = 'none';
   carregarFicha();
