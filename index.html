@@ -478,6 +478,16 @@ input[type=checkbox]{accent-color:var(--rose);cursor:pointer}
     <div class="sidebar">
       <div class="sb-title">Filtros da ficha</div>
 
+      <div class="sb-s" style="background:var(--rose-ll);border:1px solid var(--rose);border-radius:10px;padding:12px 14px;margin-bottom:4px">
+        <div class="sb-ttl" style="color:var(--rose);display:flex;align-items:center;gap:6px;margin-bottom:2px">✂️ Cortar por lista</div>
+        <div style="font-size:10px;color:var(--text2);margin-bottom:8px;line-height:1.4">Escolha uma lista para gerar a ficha de corte só dela — sem repetir o que já foi cortado.</div>
+        <select class="sb-sel" id="ficha-lista" onchange="carregarFicha()" style="border-color:var(--rose)">
+          <option value="">Todas as listas</option>
+        </select>
+      </div>
+
+      <div class="sb-div"></div>
+
       <div class="sb-s">
         <div class="sb-ttl">Lote de envio</div>
         <div style="position:relative">
@@ -502,16 +512,6 @@ input[type=checkbox]{accent-color:var(--rose);cursor:pointer}
           <input type="date" id="ficha-ate" onchange="carregarFicha()" style="flex:1;font-size:11px;padding:5px 7px;border-radius:7px;border:1px solid var(--border2);background:var(--bg2);color:var(--text)">
         </div>
         <div style="font-size:10px;color:var(--text3);margin-top:4px;line-height:1.4">Pega todos os envios no período (junta vários lotes). Funciona junto com o filtro de lote acima.</div>
-      </div>
-
-      <div class="sb-div"></div>
-
-      <div class="sb-s">
-        <div class="sb-ttl">Lista de produção</div>
-        <select class="sb-sel" id="ficha-lista" onchange="carregarFicha()">
-          <option value="">Todas as listas</option>
-        </select>
-        <div style="font-size:10px;color:var(--text3);margin-top:4px;line-height:1.4">Mostra só os itens da lista escolhida — útil para cortar um lote novo sem repetir o que já foi cortado.</div>
       </div>
 
       <div class="sb-div"></div>
@@ -1440,6 +1440,7 @@ function renderMinhasListas() {
           <div style="display:flex;gap:6px;margin-top:12px;flex-wrap:wrap">
             <button class="btn btn-rose btn-sm" onclick="verLista('${l.id}')">Abrir lista</button>
             <button class="btn btn-gold btn-sm" onclick="imprimirLista('${l.id}')">Imprimir</button>
+            <button class="btn btn-outline btn-sm" onclick="fichaDaLista('${l.numero}')">✂️ Ficha de corte</button>
             <button class="btn btn-outline btn-sm" onclick="baixarPDFdaLista('${l.id}')">PDF</button>
             <div style="flex:1"></div>
             ${!l.dataProducao?`
@@ -3491,6 +3492,26 @@ function renderListaSalva(peds, grupos, lista) {
 }
 
 // ── Ficha de corte ────────────────────────────────────────────────────────────
+// Abre a ficha de corte já filtrada por uma lista específica (chamado de Minhas Listas)
+function fichaDaLista(numero) {
+  // Navega para a seção de ficha de corte
+  const btnFicha = document.getElementById('nav-ficha') || document.querySelector('[onclick*="ficha"]');
+  showSec('ficha', btnFicha);
+  // Limpa filtros que poderiam conflitar (lote, período, modelo) — a lista já define o conjunto
+  try { limparFichaLote && limparFichaLote(); } catch(e){}
+  FICHA_MODELOS = []; try { renderFichaModelosSel(); } catch(e){}
+  FICHA_TIPO = 'todos'; try { setFichaTipo('todos', document.getElementById('ficha-tipo-todos')); } catch(e){}
+  const cc = document.getElementById('ficha-colecao'); if (cc) cc.value = '';
+  const mi = document.getElementById('ficha-modelo-input'); if (mi) mi.value = '';
+  const fde = document.getElementById('ficha-de'); if (fde) fde.value = '';
+  const fate = document.getElementById('ficha-ate'); if (fate) fate.value = '';
+  // Carrega a ficha (popula o seletor) e então seleciona a lista pedida
+  carregarFicha().then(() => {
+    const sel = document.getElementById('ficha-lista');
+    if (sel) { sel.value = String(numero); carregarFicha(); }
+  });
+}
+
 async function carregarFicha() {
   document.getElementById('ficha-cont').innerHTML='<div class="loading"><span class="spin"></span>Carregando...</div>';
   document.getElementById('sim-box').innerHTML='';
