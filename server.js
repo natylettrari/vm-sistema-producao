@@ -568,6 +568,7 @@ const MODELOS_MAP = [
   { chave:'Necessaire', termo:'nécessaire' },
   { chave:'Necessaire', termo:'necesaire' },
   { chave:'Porta Documentos', termo:'porta documento' },
+  { chave:'Porta Documentos', termo:'documento' },
   { chave:'Porta Look', termo:'porta look' },
   { chave:'Porta Look', termo:'organizadores porta look' },
   { chave:'Porta Look', termo:'kit porta look' },
@@ -629,14 +630,15 @@ function extrairColecaoCor(title, variant) {
 
 function expandirKit(item) {
   const title = item.title || '';
-  // Kits de documentos são um único produto — não quebrar em partes
-  if (title.toLowerCase().includes('documento')) return [item];
+  const tl = title.toLowerCase();
+  // Um kit "de verdade" traz uma LISTA de peças (vírgulas ou " e " separando vários produtos).
+  const temListaDePecas = /,/.test(tl) || /\se\s/.test(tl);
+  // Kit Porta Documentos / Kit Documentos sozinho é um único produto — não quebrar.
+  // Mas se vier dentro de um kit com lista de peças, deve quebrar normalmente.
+  if (!temListaDePecas && tl.includes('documento')) return [item];
   // Kits de SEO que são UM produto só (a palavra "organizadores" é só do site, não é peça):
   // "Kit Organizadores Cristal", "Kit Organizadores Porta Look" → não quebrar.
-  // MAS: se o título traz uma LISTA de peças (vírgulas ou " e "), é um kit de verdade
-  // com vários produtos (ex: "Kit Bolsas ... Mala, Kate, Mochila e Kit Cristal") → deve quebrar.
-  const tl = title.toLowerCase();
-  const temListaDePecas = /,/.test(tl) || /\se\s/.test(tl);
+  // MAS: se o título traz uma LISTA de peças, é um kit de verdade com vários produtos → quebrar.
   if (!temListaDePecas && (
       tl.includes('organizadores cristal') || tl.includes('organizador cristal') ||
       tl.includes('organizadores porta look') || tl.includes('organizador porta look') ||
