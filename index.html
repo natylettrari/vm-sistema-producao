@@ -480,10 +480,18 @@ input[type=checkbox]{accent-color:var(--rose);cursor:pointer}
 
       <div class="sb-s" style="background:var(--rose-ll);border:1px solid var(--rose);border-radius:10px;padding:12px 14px;margin-bottom:4px">
         <div class="sb-ttl" style="color:var(--rose);display:flex;align-items:center;gap:6px;margin-bottom:2px">✂️ Cortar por lista</div>
-        <div style="font-size:10px;color:var(--text2);margin-bottom:8px;line-height:1.4">Escolha uma lista para gerar a ficha de corte só dela — sem repetir o que já foi cortado.</div>
-        <select class="sb-sel" id="ficha-lista" onchange="carregarFicha()" style="border-color:var(--rose)">
-          <option value="">Todas as listas</option>
-        </select>
+        <div style="font-size:10px;color:var(--text2);margin-bottom:8px;line-height:1.4">Busque pelo número da lista ou pelo modelo (ex: "Madison" ou "0003") e gere a ficha só dela.</div>
+        <div style="position:relative">
+          <input type="text" id="ficha-lista-input" placeholder="Buscar lista ou modelo..." autocomplete="off"
+            oninput="filtrarListaSugestoes(this.value)" onfocus="filtrarListaSugestoes(this.value)"
+            style="width:100%;font-size:12px;padding:7px 10px;border-radius:7px;border:1px solid var(--rose);background:var(--bg2);color:var(--text);font-family:var(--sans)">
+          <div id="ficha-lista-sugestoes" style="display:none;position:absolute;top:100%;left:0;right:0;background:var(--bg2);border:1px solid var(--rose);border-radius:7px;margin-top:3px;z-index:120;max-height:240px;overflow-y:auto;box-shadow:0 4px 12px rgba(0,0,0,.12)"></div>
+        </div>
+        <div id="ficha-lista-sel" style="display:none;margin-top:8px;background:var(--rose);color:#fff;padding:6px 11px;border-radius:7px;font-size:12px;align-items:center;justify-content:space-between">
+          <span id="ficha-lista-sel-label"></span>
+          <span onclick="limparFichaLista()" style="cursor:pointer;font-size:15px;margin-left:8px">×</span>
+        </div>
+        <input type="hidden" id="ficha-lista">
       </div>
 
       <div class="sb-div"></div>
@@ -571,10 +579,10 @@ input[type=checkbox]{accent-color:var(--rose);cursor:pointer}
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px">
         <div>
           <div style="font-family:var(--serif);font-style:italic;font-size:20px;color:var(--rose)">Ficha de Corte</div>
-          <div style="font-size:12px;color:var(--text3);margin-top:2px" id="ficha-subtitulo">Por cor e coleção — para programar o corte do tecido</div>
+          <div style="font-size:12px;color:var(--text3);margin-top:2px" id="ficha-subtitulo">Por modelo — quantas peças de cada modelo e suas cores</div>
         </div>
         <div style="display:flex;gap:8px;align-items:center">
-          <button class="btn btn-outline" id="btn-ficha-visao" onclick="alternarVisaoFicha()">Ver por modelo</button>
+          <button class="btn btn-outline" id="btn-ficha-visao" onclick="alternarVisaoFicha()">Ver por cor</button>
           <button class="btn btn-gold" onclick="imprimirFicha()">Imprimir</button>
         </div>
       </div>
@@ -3505,10 +3513,9 @@ function fichaDaLista(numero) {
   const mi = document.getElementById('ficha-modelo-input'); if (mi) mi.value = '';
   const fde = document.getElementById('ficha-de'); if (fde) fde.value = '';
   const fate = document.getElementById('ficha-ate'); if (fate) fate.value = '';
-  // Carrega a ficha (popula o seletor) e então seleciona a lista pedida
+  // Carrega a ficha e então seleciona a lista pedida (usa o seletor de busca)
   carregarFicha().then(() => {
-    const sel = document.getElementById('ficha-lista');
-    if (sel) { sel.value = String(numero); carregarFicha(); }
+    selecionarFichaLista(String(numero));
   });
 }
 
@@ -3517,27 +3524,11 @@ async function carregarFicha() {
   document.getElementById('sim-box').innerHTML='';
   const colecao = (document.getElementById('ficha-colecao')||{value:''}).value.toLowerCase();
 
-  // Preenche o seletor de listas (mantém a seleção atual)
-  const selLista = document.getElementById('ficha-lista');
-  if (selLista) {
-    const atual = selLista.value;
-    const numeros = [...new Set(PEDIDOS.map(p => p.listaNumero).filter(Boolean))]
-      .sort((a,b) => String(a).localeCompare(String(b), undefined, {numeric:true}));
-    const opcoes = ['<option value="">Todas as listas</option>']
-      .concat(numeros.map(n => {
-        const l = (LISTAS||[]).find(x => String(x.numero) === String(n));
-        const dataProd = l && l.dataProducao ? ' · sai ' + l.dataProducao : '';
-        return `<option value="${n}">Lista #${n}${dataProd}</option>`;
-      }));
-    selLista.innerHTML = opcoes.join('');
-    selLista.value = atual; // restaura seleção se ainda existir
-  }
-
   // Filtrar localmente usando PEDIDOS já carregados
   let peds = [...PEDIDOS];
 
   // Filtro por lista de produção — mostra só os itens da lista escolhida
-  const fLista = selLista ? selLista.value : '';
+  const fLista = (document.getElementById('ficha-lista')||{value:''}).value;
   if (fLista) {
     peds = peds.filter(p => String(p.listaNumero) === String(fLista));
   }
@@ -3750,7 +3741,7 @@ function imprimirFicha() {
 let FICHA_LOTE = null;
 let FICHA_MODELOS = [];
 let FICHA_TIPO = 'todos';
-let FICHA_VISAO = 'cor'; // 'cor' ou 'modelo'
+let FICHA_VISAO = 'modelo'; // 'cor' ou 'modelo' — modelo é o padrão
 
 function alternarVisaoFicha() {
   FICHA_VISAO = (FICHA_VISAO === 'cor') ? 'modelo' : 'cor';
@@ -3765,6 +3756,83 @@ function alternarVisaoFicha() {
   }
   carregarFicha();
 }
+
+// ── Busca de lista para a ficha de corte ──────────────────────────────────────
+// Monta a lista de listas disponíveis (que têm itens nos pedidos), com nome e modelos
+function _listasDisponiveis() {
+  const numeros = [...new Set(PEDIDOS.map(p => p.listaNumero).filter(Boolean))];
+  return numeros.map(n => {
+    const l = (LISTAS||[]).find(x => String(x.numero) === String(n)) || {};
+    // Modelos: usa o campo da lista, ou deduz dos pedidos daquela lista
+    let modelos = Array.isArray(l.modelos) ? l.modelos.slice() : [];
+    if (!modelos.length) {
+      modelos = [...new Set(PEDIDOS.filter(p => String(p.listaNumero)===String(n)).map(p => p.modeloBase).filter(Boolean))];
+    }
+    return { numero: String(n), nome: l.nome || '', modelos, dataProducao: l.dataProducao || '' };
+  }).sort((a,b) => a.numero.localeCompare(b.numero, undefined, {numeric:true}));
+}
+
+function filtrarListaSugestoes(val) {
+  const box = document.getElementById('ficha-lista-sugestoes');
+  if (!box) return;
+  const termo = (val||'').toLowerCase().trim();
+  let listas = _listasDisponiveis();
+  if (termo) {
+    listas = listas.filter(l =>
+      l.numero.toLowerCase().includes(termo) ||
+      ('#'+l.numero).toLowerCase().includes(termo) ||
+      (l.nome||'').toLowerCase().includes(termo) ||
+      (l.modelos||[]).some(m => (m||'').toLowerCase().includes(termo))
+    );
+  }
+  if (!listas.length) {
+    box.innerHTML = '<div style="padding:9px 11px;font-size:11px;color:var(--text3)">Nenhuma lista encontrada</div>';
+    box.style.display = 'block';
+    return;
+  }
+  box.innerHTML = listas.map(l => {
+    const modelosTxt = (l.modelos||[]).slice(0,4).join(', ') + ((l.modelos||[]).length>4 ? '…' : '');
+    const dataTxt = l.dataProducao ? ` · sai ${l.dataProducao}` : '';
+    return `<div class="sug-item" style="padding:8px 11px;cursor:pointer;border-bottom:1px solid var(--border)" onclick="selecionarFichaLista('${l.numero}')">
+      <div style="font-size:12px;font-weight:600;color:var(--rose)">Lista #${l.numero}${dataTxt}</div>
+      <div style="font-size:10px;color:var(--text2);margin-top:1px">${modelosTxt || 'sem modelos'}</div>
+    </div>`;
+  }).join('');
+  box.style.display = 'block';
+}
+
+function selecionarFichaLista(numero) {
+  const hidden = document.getElementById('ficha-lista');
+  if (hidden) hidden.value = numero;
+  const box = document.getElementById('ficha-lista-sugestoes');
+  if (box) box.style.display = 'none';
+  const input = document.getElementById('ficha-lista-input');
+  if (input) input.value = '';
+  // Mostra o chip da lista selecionada
+  const sel = document.getElementById('ficha-lista-sel');
+  const lbl = document.getElementById('ficha-lista-sel-label');
+  const l = _listasDisponiveis().find(x => x.numero === String(numero));
+  if (lbl) lbl.textContent = 'Lista #' + numero + (l && l.modelos.length ? ' · ' + l.modelos.slice(0,3).join(', ') : '');
+  if (sel) sel.style.display = 'flex';
+  carregarFicha();
+}
+
+function limparFichaLista() {
+  const hidden = document.getElementById('ficha-lista'); if (hidden) hidden.value = '';
+  const sel = document.getElementById('ficha-lista-sel'); if (sel) sel.style.display = 'none';
+  const input = document.getElementById('ficha-lista-input'); if (input) input.value = '';
+  const box = document.getElementById('ficha-lista-sugestoes'); if (box) box.style.display = 'none';
+  carregarFicha();
+}
+
+// Fecha sugestões ao clicar fora
+document.addEventListener('click', function(e) {
+  const wrap = document.getElementById('ficha-lista-sugestoes');
+  const input = document.getElementById('ficha-lista-input');
+  if (wrap && input && !input.contains(e.target) && !wrap.contains(e.target)) {
+    wrap.style.display = 'none';
+  }
+});
 
 function filtrarFichaSugestoes(val) {
   const box = document.getElementById('ficha-lote-sugestoes');
@@ -3847,7 +3915,7 @@ function limparFichaFiltros() {
   setFichaTipo('todos', document.getElementById('ficha-tipo-todos'));
   document.getElementById('ficha-colecao').value = '';
   document.getElementById('ficha-modelo-input').value = '';
-  const sl = document.getElementById('ficha-lista'); if (sl) sl.value = '';
+  try { limparFichaLista(); } catch(e){ const sl=document.getElementById('ficha-lista'); if(sl) sl.value=''; }
   const fde = document.getElementById('ficha-de'); if (fde) fde.value = '';
   const fate = document.getElementById('ficha-ate'); if (fate) fate.value = '';
 }
