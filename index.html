@@ -285,7 +285,7 @@ input[type=checkbox]{accent-color:var(--rose);cursor:pointer}
     <input type="search" id="f-busca" placeholder="🔍 Buscar pedido, modelo, bordado, vendedora, cliente..." style="width:280px;font-size:12px;padding:5px 10px;border-radius:7px;border:1px solid var(--border2);background:var(--bg2);color:var(--text);font-family:var(--sans)" oninput="filtrar()">
     <div style="width:1px;height:20px;background:var(--border);margin:0 3px"></div>
     <select id="f-mod" onchange="filtrar()"><option value="">Todos os modelos</option></select>
-    <select id="f-col" onchange="filtrar()"><option value="">Todas as coleções</option><option>Ella</option><option>Urban Chic</option><option>Nós</option><option>Origem</option><option>Le Petit</option><option>Tressê Palha</option></select>
+    <select id="f-col" onchange="filtrar()"><option value="">Todas as coleções</option><option>Ella</option><option>Urban Chic</option><option>Nós</option><option>Origem</option><option>Le Petit</option><option>Tressê Palha</option><option>Glam</option></select>
     <select id="f-vend" onchange="filtrar()"><option value="">Todas as vendedoras</option></select>
     <select id="f-st" onchange="filtrar()"><option value="">Todos os status</option><option value="aguardando">Aguardando</option><option value="em_producao">Em produção</option><option value="pronto">Pronto</option><option value="atrasado">Atrasado</option><option value="pronta_entrega">Pronta entrega</option><option value="enviado">Enviado</option><option value="__prioridade">★ Prioridade</option><option value="__urgente">! Urgente</option></select>
     <span style="font-size:11px;color:var(--text3)">De</span>
@@ -643,6 +643,11 @@ input[type=checkbox]{accent-color:var(--rose);cursor:pointer}
         <div style="font-size:12px;color:var(--text3);margin-top:2px">Histórico de edições feitas pelos colaboradores — mais recentes primeiro</div>
       </div>
       <button class="btn btn-outline" onclick="carregarAlteracoes()">Atualizar</button>
+    </div>
+    <div style="margin-bottom:16px">
+      <input type="text" id="alt-busca" placeholder="🔍 Buscar por pedido, modelo, cor ou quem alterou..." autocomplete="off"
+        oninput="filtrarAlteracoes(this.value)"
+        style="width:100%;max-width:480px;font-size:13px;padding:9px 13px;border-radius:8px;border:1px solid var(--border);background:var(--bg2);color:var(--text);font-family:var(--sans)">
     </div>
     <div id="alteracoes-cont"><div class="loading"><span class="spin"></span>Carregando...</div></div>
   </div>
@@ -1516,21 +1521,51 @@ async function carregarAlteracoes() {
     const r = await fetch('/api/historico-geral');
     const d = await r.json();
     const hist = d.historico || [];
+    ALTERACOES_CACHE = hist; // guarda para a busca filtrar sem recarregar
     // Marca como "visto": zera o badge e guarda o total atual
     ALTERACOES_TOTAL_VISTO = d.total || hist.length;
     localStorage.setItem('VM_ALT_VISTO', String(ALTERACOES_TOTAL_VISTO));
     atualizarBadgeAlteracoes(0);
-    renderAlteracoes(hist);
+    const termoAtual = (document.getElementById('alt-busca')||{value:''}).value;
+    renderAlteracoes(termoAtual ? filtrarHistorico(hist, termoAtual) : hist);
   } catch(e) {
     if (el) el.innerHTML = `<div class="err">Erro ao carregar alterações: ${e.message}</div>`;
   }
 }
 
-function renderAlteracoes(hist) {
+let ALTERACOES_CACHE = [];
+
+// Filtra o histórico por número do pedido, modelo, cor, quem alterou, campo e valores
+function filtrarHistorico(hist, termo) {
+  const t = (termo||'').toLowerCase().trim();
+  if (!t) return hist;
+  // Permite buscar número com ou sem # (ex: "3840" acha "#3840")
+  const tNum = t.replace(/[#\s]/g,'');
+  return hist.filter(h => {
+    const campos = [
+      String(h.order_numero||''),
+      String(h.order_numero||'').replace(/[#\s]/g,''),
+      h.modelo_atual||'', h.cor_atual||'',
+      h.alterado_por||'',
+      CAMPOS_ALTERACAO[h.campo]||h.campo||'',
+      h.valor_anterior||'', h.valor_novo||''
+    ].map(x => String(x).toLowerCase());
+    return campos.some(c => c.includes(t)) || (tNum && campos.some(c => c.replace(/[#\s]/g,'').includes(tNum)));
+  });
+}
+
+function filtrarAlteracoes(termo) {
+  const filtrado = filtrarHistorico(ALTERACOES_CACHE, termo);
+  renderAlteracoes(filtrado, termo);
+}
+
+function renderAlteracoes(hist, termoBusca) {
   const el = document.getElementById('alteracoes-cont');
   if (!el) return;
   if (!hist.length) {
-    el.innerHTML = '<div class="loading">Nenhuma alteração registrada ainda</div>';
+    el.innerHTML = termoBusca
+      ? `<div class="loading">Nenhuma alteração encontrada para "${termoBusca}"</div>`
+      : '<div class="loading">Nenhuma alteração registrada ainda</div>';
     return;
   }
   el.innerHTML = hist.map(h => {
