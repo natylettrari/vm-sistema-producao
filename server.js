@@ -614,7 +614,7 @@ function extrairModeloBase(title) {
 }
 
 function extrairCorDoTitulo(title) {
-  const cols = ['Linho','Ella','Urban Chic','Nós','Origem','Le Petit','Tressê Palha'];
+  const cols = ['Linho','Ella','Urban Chic','Nós','Origem','Le Petit','Tressê Palha','Glam'];
   const cores = ['Café','Caramelo','Off White','Marinho','Bordô','Cinza','Bege','Preto','Rosé','Marrom','Verde','Nude','Vinho','Rosa','Azul','Preta'];
   let c = '', r = '';
   for (const x of cols) { if (title.toLowerCase().includes(x.toLowerCase())) { c = x; break; } }
@@ -923,9 +923,10 @@ function calcStatus(tags, dataEnvio, isProntaEntrega, fulfillmentStatus) {
     if (p.length >= 2) {
       const y = p[2] ? (p[2].length===2?'20'+p[2]:p[2]) : new Date().getFullYear();
       const d = new Date(`${y}-${p[1].padStart(2,'0')}-${p[0].padStart(2,'0')}`);
+      // Data de envio já passou e o pedido NÃO foi processado na Shopify → está atrasado.
+      // (O "enviado" só vem do fulfillment real da Shopify ou da tag manual, acima.)
       if (!isNaN(d) && d < new Date()) {
-        const dias = Math.round((new Date()-d)/(1000*60*60*24));
-        return dias > 60 ? 'enviado' : 'atrasado';
+        return 'atrasado';
       }
     }
   }
@@ -1577,8 +1578,8 @@ app.get('/api/historico-geral', async (req,res) => {
 app.post('/api/pedido/:id/editar', exigirEdicao, async (req,res) => {
   try {
     const { id } = req.params; // orderId
-    const { alteradoPor, numero, itemId, campos } = req.body;
-    // campos = { modelo, colecaoCor, bordado, dataEnvio, vendedora }
+    const { alteradoPor, numero, itemId, campos, anteriores } = req.body;
+    const ant = anteriores || {}; // valores que apareciam na tela antes da edição
     const numPedido = numero || null;
     const chaveItem = itemId || id; // se não vier itemId, usa o orderId (retaguarda)
 
@@ -1591,31 +1592,31 @@ app.post('/api/pedido/:id/editar', exigirEdicao, async (req,res) => {
     const updates = {};
 
     if (campos.modelo !== undefined) {
-      historicoItens.push([id, numPedido, 'modelo', dadosAtuais.modelo_override||null, campos.modelo, alteradoPor, chaveItem]);
+      historicoItens.push([id, numPedido, 'modelo', ant.modelo !== undefined ? ant.modelo : (dadosAtuais.modelo_override||null), campos.modelo, alteradoPor, chaveItem]);
       updates.modelo_override = campos.modelo;
     }
     if (campos.colecaoCor !== undefined) {
-      historicoItens.push([id, numPedido, 'colecao_cor', dadosAtuais.colecao_cor_override||null, campos.colecaoCor, alteradoPor, chaveItem]);
+      historicoItens.push([id, numPedido, 'colecao_cor', ant.colecaoCor !== undefined ? ant.colecaoCor : (dadosAtuais.colecao_cor_override||null), campos.colecaoCor, alteradoPor, chaveItem]);
       updates.colecao_cor_override = campos.colecaoCor;
     }
     if (campos.bordado !== undefined) {
-      historicoItens.push([id, numPedido, 'bordado', dadosAtuais.bordado_override||null, campos.bordado, alteradoPor, chaveItem]);
+      historicoItens.push([id, numPedido, 'bordado', ant.bordado !== undefined ? ant.bordado : (dadosAtuais.bordado_override||null), campos.bordado, alteradoPor, chaveItem]);
       updates.bordado_override = campos.bordado;
     }
     if (campos.dataEnvio !== undefined) {
-      historicoItens.push([id, numPedido, 'data_envio', dadosAtuais.data_envio_override||null, campos.dataEnvio, alteradoPor, chaveItem]);
+      historicoItens.push([id, numPedido, 'data_envio', ant.dataEnvio !== undefined ? ant.dataEnvio : (dadosAtuais.data_envio_override||null), campos.dataEnvio, alteradoPor, chaveItem]);
       updates.data_envio_override = campos.dataEnvio;
     }
     if (campos.vendedora !== undefined) {
-      historicoItens.push([id, numPedido, 'vendedora', dadosAtuais.vendedora_override||null, campos.vendedora, alteradoPor, chaveItem]);
+      historicoItens.push([id, numPedido, 'vendedora', ant.vendedora !== undefined ? ant.vendedora : (dadosAtuais.vendedora_override||null), campos.vendedora, alteradoPor, chaveItem]);
       updates.vendedora_override = campos.vendedora;
     }
     if (campos.status !== undefined) {
-      historicoItens.push([id, numPedido, 'status', dadosAtuais.status_override||null, campos.status, alteradoPor, chaveItem]);
+      historicoItens.push([id, numPedido, 'status', ant.status !== undefined ? ant.status : (dadosAtuais.status_override||null), campos.status, alteradoPor, chaveItem]);
       updates.status_override = campos.status || null;
     }
     if (campos.obsInterna !== undefined) {
-      historicoItens.push([id, numPedido, 'obs_interna', dadosAtuais.obs_interna||null, campos.obsInterna, alteradoPor, chaveItem]);
+      historicoItens.push([id, numPedido, 'obs_interna', ant.obsInterna !== undefined ? ant.obsInterna : (dadosAtuais.obs_interna||null), campos.obsInterna, alteradoPor, chaveItem]);
       updates.obs_interna = campos.obsInterna || null;
     }
 
