@@ -4195,10 +4195,20 @@ async function salvarEdicao(itemId, orderId, numero) {
 
   if (!Object.keys(campos).length) { toast('Nenhuma alteração feita'); fecharModalEdicao(); return; }
 
+  // Valores que estavam aparecendo na tela ANTES da edição (da Shopify ou edição anterior)
+  const anteriores = {};
+  if (campos.modelo !== undefined) anteriores.modelo = pedido.modeloBase || '';
+  if (campos.colecaoCor !== undefined) anteriores.colecaoCor = pedido.colecaoCor || '';
+  if (campos.bordado !== undefined) anteriores.bordado = pedido.bordado || '';
+  if (campos.dataEnvio !== undefined) anteriores.dataEnvio = (pedido.dataEnvio && pedido.dataEnvio !== '—') ? pedido.dataEnvio : '';
+  if (campos.vendedora !== undefined) anteriores.vendedora = (pedido.vendedora && pedido.vendedora !== '—') ? pedido.vendedora : '';
+  if (campos.status !== undefined) anteriores.status = pedido.status || '';
+  if (campos.obsInterna !== undefined) anteriores.obsInterna = pedido.obsInterna || '';
+
   try {
     const r = await fetch('/api/pedido/'+orderId+'/editar', {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body: JSON.stringify({ alteradoPor: EDITOR_NOME, numero: numero, itemId: itemId, campos })
+      body: JSON.stringify({ alteradoPor: EDITOR_NOME, numero: numero, itemId: itemId, campos, anteriores })
     });
     if (!r.ok) throw new Error('Erro ao salvar');
 
