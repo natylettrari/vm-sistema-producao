@@ -1028,10 +1028,16 @@ async function buscarTodosPedidos(token, params={}) {
   if (data_ate && filtro_data_tipo!=='pedido') dp+=`&created_at_max=${new Date(data_ate+'T23:59:59').toISOString()}`;
 
   let allOrders = [];
-  let url = `https://${SHOP}/admin/api/2024-01/orders.json?status=any&limit=250${dp}&fields=id,order_number,created_at,note,tags,line_items,fulfillment_status,financial_status,customer,cancelled_at`;
+  let url = `https://${SHOP}/admin/api/2024-01/orders.json?status=any&limit=250${dp}&fields=id,order_number,created_at,note,tags,line_items,fulfillment_status,financial_status,customer`;
   while (url) {
     const r = await fetch(url, { headers: shopHeaders(token) });
-    if (!r.ok) throw new Error(`Shopify ${r.status}`);
+    if (!r.ok) {
+      // Não derruba o sistema inteiro: registra e para a paginação com o que já tem.
+      const corpo = await r.text().catch(()=> '');
+      console.error(`Shopify retornou ${r.status} ao buscar pedidos:`, corpo.slice(0,300));
+      if (allOrders.length === 0) throw new Error(`Shopify ${r.status}`);
+      break;
+    }
     const d = await r.json();
     allOrders = allOrders.concat(d.orders||[]);
     const link = r.headers.get('link')||'';
