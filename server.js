@@ -1028,7 +1028,7 @@ async function buscarTodosPedidos(token, params={}) {
   if (data_ate && filtro_data_tipo!=='pedido') dp+=`&created_at_max=${new Date(data_ate+'T23:59:59').toISOString()}`;
 
   let allOrders = [];
-  let url = `https://${SHOP}/admin/api/2024-01/orders.json?status=any&limit=250${dp}&fields=id,order_number,created_at,note,tags,line_items,fulfillment_status,customer`;
+  let url = `https://${SHOP}/admin/api/2024-01/orders.json?status=any&limit=250${dp}&fields=id,order_number,created_at,note,tags,line_items,fulfillment_status,financial_status,customer,cancelled_at`;
   while (url) {
     const r = await fetch(url, { headers: shopHeaders(token) });
     if (!r.ok) throw new Error(`Shopify ${r.status}`);
@@ -1038,6 +1038,15 @@ async function buscarTodosPedidos(token, params={}) {
     const next = link.match(/<([^>]+)>;\s*rel="next"/);
     url = next ? next[1] : null;
   }
+
+  // Só vão para produção pedidos PAGOS (inclui pagamento parcial).
+  // Exclui não pagos/expirados (pending, expired, voided, refunded, etc.) e cancelados.
+  const STATUS_PAGOS = ['paid', 'partially_paid', 'partially_refunded'];
+  allOrders = allOrders.filter(o => {
+    if (o.cancelled_at) return false; // pedido cancelado nunca entra
+    const fs = (o.financial_status || '').toLowerCase();
+    return STATUS_PAGOS.includes(fs);
+  });
 
   // Carrega listas e overrides UMA VEZ para todos os pedidos
   const listasCache = await loadListas();
@@ -1070,7 +1079,10 @@ async function buscarTodosPedidos(token, params={}) {
     lista.push(...itensPedido);
   }
 
-  try {
+  // Rascunhos (draft orders) NÃO vão para produção — são orçamentos não pagos.
+  // (Desativado por decisão: só pedido pago real entra. Para reativar, troque "false" por "true".)
+  if (false) {
+   try {
     const dr = await fetch(`https://${SHOP}/admin/api/2024-01/draft_orders.json?status=open&limit=250`, { headers: shopHeaders(token) });
     if (dr.ok) {
       const dd = await dr.json();
@@ -1088,7 +1100,8 @@ async function buscarTodosPedidos(token, params={}) {
         lista.push(...itensPedido);
       }
     }
-  } catch(e) {}
+   } catch(e) {}
+  }
 
   if (filtro_data_tipo==='pedido' && data_de) {
     lista = lista.filter(p => {
