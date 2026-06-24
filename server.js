@@ -994,7 +994,14 @@ function mapItem(order, item, isDraft, listasCache, idx) {
     if (ovItem && ovItem[campo] !== undefined && ovItem[campo] !== null) return ovItem[campo];
     return undefined;
   };
-  const modeloFinal = pick('modelo_override') || modeloBase;
+  let modeloFinal = pick('modelo_override') || modeloBase;
+  // Normaliza nomes antigos de Necessaire/Cristal mesmo quando vieram de edição manual antiga,
+  // para o catálogo ficar uniforme (Necessaire P/M/G/Kit). Só age se o texto contém esses termos.
+  if (modeloFinal) {
+    const mfLow = modeloFinal.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+    if (mfLow.includes('necess')) { const n = extrairModeloNecessaire(modeloFinal); if (n) modeloFinal = n; }
+    else if (mfLow.includes('cristal')) { const c = extrairModeloCristal(modeloFinal); if (c) modeloFinal = c; }
+  }
   const colecaoCorFinal = pick('colecao_cor_override') || extrairColecaoCor(item.title, item.variant_title);
   const bordadoFinal = (ovItem && ovItem.bordado_override !== undefined && ovItem.bordado_override !== null)
     ? ovItem.bordado_override : getBordado(obs, modeloBase, item._unidade);
