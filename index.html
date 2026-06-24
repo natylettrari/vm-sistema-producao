@@ -2650,8 +2650,19 @@ function filtrarLista() {
   renderLista(encontrados,grupos,'Modelo','','');
 }
 
+// Clicar num número do progresso do lote marca só aquele status e regenera a lista
+function filtrarPorStatusLote(status) {
+  // mapa status -> id do checkbox
+  const mapa = { aguardando:'ls-ag', em_producao:'ls-pr', pronto:'ls-ok', atrasado:'ls-at', pronta_entrega:'ls-pe', enviado:'ls-en' };
+  // desmarca todos
+  Object.values(mapa).forEach(id => { const el=document.getElementById(id); if(el) el.checked=false; });
+  // marca só o escolhido
+  const alvo = document.getElementById(mapa[status]);
+  if (alvo) alvo.checked = true;
+  gerarListaFiltros();
+}
+
 function gerarListaFiltros() {
-  const ordBtn=document.querySelector('.ord-btn.on');
   const ordBy=ordBtn?ordBtn.textContent.trim():'Modelo';
   const de=document.getElementById('l-de').value;
   const ate=document.getElementById('l-ate').value;
@@ -2818,9 +2829,9 @@ function renderLista(peds,grupos,ordBy,de,ate) {
       <div class="prog-top"><span>Progresso do lote</span><span style="font-weight:500;color:var(--rose)">${pct}% em andamento (${feito}/${peds.length})</span></div>
       <div class="prog-bg"><div class="prog-fill ${pct===100?'done':''}" style="width:${pct}%"></div></div>
       <div class="prog-stats">
-        <span><span class="prog-dot" style="background:var(--border2)"></span>Aguardando: ${peds.filter(p=>p.status==='aguardando').length}</span>
-        <span><span class="prog-dot" style="background:var(--gold)"></span>Em produção: ${prod}</span>
-        <span><span class="prog-dot" style="background:#4caf7d"></span>Prontos: ${pronto}</span>
+        <span onclick="filtrarPorStatusLote('aguardando')" style="cursor:pointer" title="Ver só aguardando"><span class="prog-dot" style="background:var(--border2)"></span>Aguardando: ${peds.filter(p=>p.status==='aguardando').length}</span>
+        <span onclick="filtrarPorStatusLote('em_producao')" style="cursor:pointer" title="Ver só em produção"><span class="prog-dot" style="background:var(--gold)"></span>Em produção: ${prod}</span>
+        <span onclick="filtrarPorStatusLote('pronto')" style="cursor:pointer" title="Ver só prontos"><span class="prog-dot" style="background:#4caf7d"></span>Prontos: ${pronto}</span>
       </div>
     </div>
     ${gruposHtml}
