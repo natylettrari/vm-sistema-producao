@@ -603,12 +603,31 @@ function extrairModeloCristal(title) {
   return 'Kit Cristal';
 }
 
+// Normaliza todas as variações de Necessaire para: Necessaire P / M / G ou Kit Necessaire.
+// Aceita "necessaire"/"necessarie"/"nécessaire" (com/sem acento e com/sem i),
+// tamanhos por letra (P/M/G) ou por extenso (pequena/media/grande).
+function extrairModeloNecessaire(title) {
+  // tira acentos para comparar
+  const t = (title||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+  // precisa conter necessaire/necessarie (qualquer grafia com "necess")
+  if (!t.includes('necess')) return null;
+  // Kit de necessaires (completo) — "kit necessaire", "kit de necessaires"
+  if (/kit\s*(de\s*)?necess/.test(t)) return 'Kit Necessaire';
+  // Tamanhos: por extenso ou por letra isolada
+  if (/pequena|\bp\b/.test(t)) return 'Necessaire P';
+  if (/media|\bm\b/.test(t)) return 'Necessaire M';
+  if (/grande|\bg\b/.test(t)) return 'Necessaire G';
+  // Sem tamanho identificado: trata como Necessaire genérica
+  return 'Necessaire';
+}
+
 function extrairModeloBase(title) {
   if (!title) return 'Outros';
   const t = title.toLowerCase();
   // Unifica todas as variações de documentos (porta documentos, kit documentos, etc.)
   if (t.includes('documento')) return 'Porta Documentos';
   if (t.includes('cristal')) { const c = extrairModeloCristal(title); if (c) return c; }
+  if (t.normalize('NFD').replace(/[\u0300-\u036f]/g,'').includes('necess')) { const n = extrairModeloNecessaire(title); if (n) return n; }
   for (const m of MODELOS_MAP) { if (t.includes(m.termo)) return m.chave; }
   return title.replace(/\b(bolsa|mochila|mala|maternidade|ella|urban chic|nós|nos|origem|le petit|tressê palha|bege|preto|marinho|caramelo|café|cafe|cinza|bordô|bordo|off white|rosé|rose|marrom|verde|nude|vinho|rosa|azul|preta)\b/gi,'').replace(/\s+/g,' ').trim() || title;
 }
@@ -654,6 +673,12 @@ function expandirKit(item) {
     const cristal = extrairModeloCristal(parte);
     if (cristal) {
       itens.push({ ...item, title: cristal + ' ' + extrairCorDoTitulo(title), isKitItem: true, kitOriginal: title });
+      continue;
+    }
+    // Necessaire também tem função própria (normaliza tamanho/kit)
+    const necessaire = extrairModeloNecessaire(parte);
+    if (necessaire) {
+      itens.push({ ...item, title: necessaire + ' ' + extrairCorDoTitulo(title), isKitItem: true, kitOriginal: title });
       continue;
     }
     const m = MODELOS_MAP.find(m => parte.toLowerCase().includes(m.termo));
