@@ -628,6 +628,9 @@ function extrairModeloBase(title) {
   if (t.includes('documento')) return 'Porta Documentos';
   if (t.includes('cristal')) { const c = extrairModeloCristal(title); if (c) return c; }
   if (t.normalize('NFD').replace(/[\u0300-\u036f]/g,'').includes('necess')) { const n = extrairModeloNecessaire(title); if (n) return n; }
+  // Alça de carrinho é um produto DIFERENTE da alça personalizada (que vai na bolsa).
+  const tSemAcento = t.normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+  if (tSemAcento.includes('alca') && tSemAcento.includes('carrinho')) return 'Alça de Carrinho';
   for (const m of MODELOS_MAP) { if (t.includes(m.termo)) return m.chave; }
   return title.replace(/\b(bolsa|mochila|mala|maternidade|ella|urban chic|nós|nos|origem|le petit|tressê palha|bege|preto|marinho|caramelo|café|cafe|cinza|bordô|bordo|off white|rosé|rose|marrom|verde|nude|vinho|rosa|azul|preta)\b/gi,'').replace(/\s+/g,' ').trim() || title;
 }
