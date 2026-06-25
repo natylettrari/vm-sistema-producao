@@ -901,7 +901,18 @@ function processarAlcasPersonalizadas(order, itensPedido) {
   if (!alcas.length) return;
 
   // Bolsas que podem ter alça personalizada
-  const BOLSAS_ALCA = ['madison mini','madison','madeleine','louise mini','louise','frasqueira'];
+  // Qualquer bolsa do catálogo pode ter alça personalizada.
+  // Ordem importa: nomes mais específicos primeiro (ex: "madison mini" antes de "madison").
+  const BOLSAS_ALCA = [
+    'madison mini','madison',
+    'mala de rodinhas','rodinhas',
+    'madeleine',
+    'mochila 2 em 1','mochila mummy','mummy',
+    'louise mini','louise',
+    'cleo','cloé','cloe',
+    'liz','kate',
+    'frasqueira'
+  ];
 
   // Lê as linhas de alça da observação, na ordem
   const note = order.note || '';
@@ -922,13 +933,29 @@ function processarAlcasPersonalizadas(order, itensPedido) {
   }
   if (!linhasAlca.length) return;
 
-  // Mapa de cor por bolsa, a partir das bolsas presentes no pedido
+  // Nome de exibição bonito/canônico para cada bolsa (resolve sinônimos e capitalização)
+  const NOME_BONITO = {
+    'madison mini':'Madison Mini','madison':'Madison',
+    'mala de rodinhas':'Mala de Rodinhas','rodinhas':'Mala de Rodinhas',
+    'madeleine':'Madeleine',
+    'mochila 2 em 1':'Mochila 2 em 1','mochila mummy':'Mummy','mummy':'Mummy',
+    'louise mini':'Louise Mini','louise':'Louise',
+    'cleo':'Cleo','cloé':'Cloé','cloe':'Cloé',
+    'liz':'Liz','kate':'Kate',
+    'frasqueira':'Frasqueira'
+  };
+  // resolve o nome canônico de uma bolsa a partir de um texto (modeloBase do pedido ou linha da obs)
+  const canonBolsa = (txt) => {
+    const s = semAcento(txt||'');
+    for (const b of BOLSAS_ALCA) { if (s === semAcento(b) || s.includes(semAcento(b))) return NOME_BONITO[b]; }
+    return null;
+  };
+
+  // Mapa de cor por bolsa (chave = nome canônico), a partir das bolsas presentes no pedido
   const corPorBolsa = {};
   for (const it of itensPedido) {
-    const mbl = semAcento(it.modeloBase||'');
-    for (const b of BOLSAS_ALCA) {
-      if (mbl === semAcento(b) && it.colecaoCor) { corPorBolsa[b] = corPorBolsa[b] || it.colecaoCor; }
-    }
+    const canon = canonBolsa(it.modeloBase);
+    if (canon && it.colecaoCor) corPorBolsa[canon] = corPorBolsa[canon] || it.colecaoCor;
   }
 
   // Associa cada alça do pedido (na ordem) com a linha de alça correspondente (na ordem)
@@ -937,9 +964,9 @@ function processarAlcasPersonalizadas(order, itensPedido) {
     const info = linhasAlca[i];
     if (!info) return;
     if (info.bolsa) {
-      const nomeBolsa = info.bolsa.split(' ').map(w => w.charAt(0).toUpperCase()+w.slice(1)).join(' ');
-      it.modeloBase = 'Alça ' + nomeBolsa;
-      it.colecaoCor = corPorBolsa[info.bolsa] || '';
+      const nomeCanon = NOME_BONITO[info.bolsa] || (info.bolsa.charAt(0).toUpperCase()+info.bolsa.slice(1));
+      it.modeloBase = 'Alça ' + nomeCanon;
+      it.colecaoCor = corPorBolsa[nomeCanon] || '';
     }
     if (info.bordado) it.bordado = info.bordado;
   });
