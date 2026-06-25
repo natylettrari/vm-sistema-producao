@@ -888,6 +888,60 @@ function getBordado(obs, modeloBase, unidade) {
 // Ex: 3 pingentes + observação "Joaquim / EVA / Rizzo" -> 1ª=Joaquim, 2ª=EVA, 3ª=Rizzo.
 // Numera por posição entre peças do mesmo modelo (robusto mesmo com linhas e quantidades misturadas).
 // Respeita bordados editados manualmente (não sobrescreve quem tem override).
+// Processa "Alça Personalizada": associa cada alça do pedido à bolsa citada na observação.
+// Observação no padrão: "Alça [Bolsa] - BORDADO: [nome]" (ex: "Alça Madison - BORDADO: Cecília").
+// A alça vira "Alça [Bolsa]", herda a COR da bolsa correspondente no pedido (se houver),
+// e recebe o bordado escrito. A associação é por ORDEM (1ª alça -> 1ª linha de alça da obs).
+function processarAlcasPersonalizadas(order, itensPedido) {
+  // Itens que são alça (modeloBase "Alça"), na ordem em que aparecem
+  const alcas = itensPedido.filter(it => (it.modeloBase||'').toLowerCase() === 'alça' || (it.modeloBase||'').toLowerCase() === 'alca');
+  if (!alcas.length) return;
+
+  // Bolsas que podem ter alça personalizada
+  const BOLSAS_ALCA = ['madison mini','madison','madeleine','louise mini','louise','frasqueira'];
+
+  // Lê as linhas de alça da observação, na ordem
+  const note = order.note || '';
+  const linhas = note.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  const semAcento = s => s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+  const linhasAlca = [];
+  for (const linha of linhas) {
+    const ln = semAcento(linha);
+    if (!ln.startsWith('alca')) continue; // só linhas que começam com "Alça"
+    // Qual bolsa? (testa nomes mais específicos primeiro: "madison mini" antes de "madison")
+    let bolsa = null;
+    for (const b of BOLSAS_ALCA) { if (ln.includes(semAcento(b))) { bolsa = b; break; } }
+    // Bordado: o que vem depois de "BORDADO:" ou "BORDADO -"
+    let bordado = null;
+    const mB = linha.match(/bordado\s*[:\-]\s*(.+)$/i);
+    if (mB) bordado = mB[1].trim();
+    linhasAlca.push({ bolsa, bordado });
+  }
+  if (!linhasAlca.length) return;
+
+  // Mapa de cor por bolsa, a partir das bolsas presentes no pedido
+  const corPorBolsa = {};
+  for (const it of itensPedido) {
+    const mbl = semAcento(it.modeloBase||'');
+    for (const b of BOLSAS_ALCA) {
+      if (mbl === semAcento(b) && it.colecaoCor) { corPorBolsa[b] = corPorBolsa[b] || it.colecaoCor; }
+    }
+  }
+
+  // Associa cada alça do pedido (na ordem) com a linha de alça correspondente (na ordem)
+  alcas.forEach((it, i) => {
+    if (it.foiEditado) return; // respeita edição manual
+    const info = linhasAlca[i];
+    if (!info) return;
+    if (info.bolsa) {
+      const nomeBolsa = info.bolsa.split(' ').map(w => w.charAt(0).toUpperCase()+w.slice(1)).join(' ');
+      it.modeloBase = 'Alça ' + nomeBolsa;
+      it.colecaoCor = corPorBolsa[info.bolsa] || '';
+    }
+    if (info.bordado) it.bordado = info.bordado;
+  });
+}
+
 function distribuirBordadosPorModelo(order, itensPedido) {
   const obs = parseObs(order.note);
   const bpm = obs.bordadosPorModelo || {};
@@ -1114,6 +1168,7 @@ async function buscarTodosPedidos(token, params={}) {
       }
     }
     distribuirBordadosPorModelo(o, itensPedido);
+    processarAlcasPersonalizadas(o, itensPedido);
     lista.push(...itensPedido);
   }
 
