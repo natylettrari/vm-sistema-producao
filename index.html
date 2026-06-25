@@ -2663,6 +2663,7 @@ function filtrarPorStatusLote(status) {
 }
 
 function gerarListaFiltros() {
+  const ordBtn=document.querySelector('.ord-btn.on');
   const ordBy=ordBtn?ordBtn.textContent.trim():'Modelo';
   const de=document.getElementById('l-de').value;
   const ate=document.getElementById('l-ate').value;
