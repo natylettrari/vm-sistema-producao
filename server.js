@@ -548,7 +548,7 @@ function saoEquivalentesPorApelido(a, b) {
 const MODELOS_MAP = [
   { chave:'Madison Mini', termo:'madison mini' },
   { chave:'Madison', termo:'madison' },
-  { chave:'Mala de Rodinhas', termo:'rodinhas' },
+  { chave:'Mala de Rodinhas', termo:'rodinha' },
   { chave:'Madeleine', termo:'madeleine' },
   { chave:'Mochila 2 em 1', termo:'mochila 2 em 1' },
   { chave:'Mochila 2 em 1', termo:'mochila 2em1' },
@@ -636,7 +636,13 @@ function extrairModeloBase(title) {
 }
 
 function extrairCorDoTitulo(title) {
-  const cols = ['Linho','Ella','Urban Chic','Nós','Origem','Le Petit','Tressê Palha','Glam'];
+  // Coleção Glam é especial: combina com material (ex: "Glam Fita Rose com Linho Rose").
+  // Quando o título contém "Glam", a cor/coleção é tudo de "Glam" até o fim.
+  const idxGlam = (title||'').toLowerCase().indexOf('glam');
+  if (idxGlam !== -1) {
+    return title.slice(idxGlam).trim();
+  }
+  const cols = ['Linho','Ella','Urban Chic','Nós','Origem','Le Petit','Tressê Palha'];
   const cores = ['Café','Caramelo','Off White','Marinho','Bordô','Cinza','Bege','Preto','Rosé','Marrom','Verde','Nude','Vinho','Rosa','Azul','Preta'];
   let c = '', r = '';
   for (const x of cols) { if (title.toLowerCase().includes(x.toLowerCase())) { c = x; break; } }
@@ -647,7 +653,9 @@ function extrairCorDoTitulo(title) {
 function extrairColecaoCor(title, variant) {
   if (!title) return '';
   if (variant && variant !== 'Default Title') return variant;
-  return extrairCorDoTitulo(title) || title;
+  // Se não houver cor/coleção identificável no título, deixa em BRANCO
+  // (as meninas preenchem manualmente) em vez de repetir o título inteiro.
+  return extrairCorDoTitulo(title);
 }
 
 function expandirKit(item) {
