@@ -893,7 +893,18 @@ async function carregarModelos() {
   try {
     const r=await fetch('/api/modelos'); const d=await r.json();
     const sel=document.getElementById('f-mod');
-    TODOS_MODELOS_LISTA = d.modelos||[];
+    const brutos = d.modelos||[];
+    // No FILTRO, todas as "Alça [bolsa]" viram uma única "Alça Personalizada".
+    // "Alça de Carrinho" continua separada. (Na lista de produção cada uma aparece específica.)
+    const ehAlcaPersonalizada = m => {
+      const s=(m||'').toLowerCase();
+      return (s==='alça'||s==='alca'||s.startsWith('alça ')||s.startsWith('alca ')) && !s.includes('carrinho');
+    };
+    const semAlcas = brutos.filter(m => !ehAlcaPersonalizada(m));
+    const temAlcaPersonalizada = brutos.some(ehAlcaPersonalizada);
+    TODOS_MODELOS_LISTA = semAlcas.slice();
+    if (temAlcaPersonalizada) TODOS_MODELOS_LISTA.push('Alça Personalizada');
+    TODOS_MODELOS_LISTA.sort((a,b)=>a.localeCompare(b,'pt'));
     TODOS_MODELOS_LISTA.forEach(m=>{
       const o=document.createElement('option'); o.value=m; o.textContent=m; sel.appendChild(o);
     });
@@ -1196,6 +1207,18 @@ function buscarLote() {
 // ── Sugestões de modelo ───────────────────────────────────────────────────────
 let TODOS_MODELOS_LISTA = [];
 let MODELOS_SEL = [];
+
+// Casa um modelo selecionado no filtro com o modeloBase de um pedido.
+// "Alça Personalizada" agrupa todas as alças que não são de carrinho.
+function modeloCombina(modeloBaseP, modeloSel) {
+  const mb = (modeloBaseP||'').toLowerCase();
+  const m = (modeloSel||'').toLowerCase();
+  if (m==='alça personalizada' || m==='alca personalizada') {
+    const ehAlca = (mb==='alça'||mb==='alca'||mb.startsWith('alça ')||mb.startsWith('alca '));
+    return ehAlca && !mb.includes('carrinho');
+  }
+  return mb === m;
+}
 
 function filtrarModelosSugestoes(val) {
   const box = document.getElementById('modelos-sugestoes');
@@ -2716,9 +2739,9 @@ function gerarListaFiltros() {
     });
   }
   if(mTags.length) peds=peds.filter(p=>mTags.some(m=>{
-    const mb=(p.modeloBase||'').toLowerCase();
-    if(mb) return mb===m;
-    return (p.modelo||'').toLowerCase()===m; // fallback se não houver modeloBase
+    if(modeloCombina(p.modeloBase, m)) return true;
+    if(!p.modeloBase) return (p.modelo||'').toLowerCase()===m; // fallback
+    return false;
   }));
   if(vend) peds=peds.filter(p=>(p.vendedora||'').toLowerCase().includes(vend));
   if(col) peds=peds.filter(p=>colecaoCombina(p.colecaoCor, col));
@@ -3651,7 +3674,7 @@ async function carregarFicha() {
   }
 
   // Filtro por modelos
-  if (FICHA_MODELOS.length) peds = peds.filter(p => FICHA_MODELOS.some(m => (p.modeloBase||'').toLowerCase() === m.toLowerCase()));
+  if (FICHA_MODELOS.length) peds = peds.filter(p => FICHA_MODELOS.some(m => modeloCombina(p.modeloBase, m)));
 
   // Filtro por tipo
   if (FICHA_TIPO !== 'todos') peds = peds.filter(p => getTipo(p.modeloBase) === FICHA_TIPO);
@@ -3677,7 +3700,7 @@ async function carregarFicha() {
       });
     }));
     // Aplica os mesmos filtros da ficha às peças PE
-    if (FICHA_MODELOS.length) pecasPE = pecasPE.filter(p => FICHA_MODELOS.some(m => (p.modeloBase||'').toLowerCase() === m.toLowerCase()));
+    if (FICHA_MODELOS.length) pecasPE = pecasPE.filter(p => FICHA_MODELOS.some(m => modeloCombina(p.modeloBase, m)));
     if (FICHA_TIPO !== 'todos') pecasPE = pecasPE.filter(p => getTipo(p.modeloBase) === FICHA_TIPO);
     if (FICHA_LOTE || fDe || fAte || fLista) pecasPE = []; // quando filtra por lote/período/lista específica, PE não entra
     if (colecao) pecasPE = pecasPE.filter(p => colecaoCombina(p.colecaoCor, colecao));
