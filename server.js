@@ -960,15 +960,15 @@ function processarAlcasPersonalizadas(order, itensPedido) {
 
   // Associa cada alça do pedido (na ordem) com a linha de alça correspondente (na ordem)
   alcas.forEach((it, i) => {
-    if (it.foiEditado) return; // respeita edição manual
     const info = linhasAlca[i];
     if (!info) return;
     if (info.bolsa) {
       const nomeCanon = NOME_BONITO[info.bolsa] || (info.bolsa.charAt(0).toUpperCase()+info.bolsa.slice(1));
-      it.modeloBase = 'Alça ' + nomeCanon;
-      it.colecaoCor = corPorBolsa[nomeCanon] || '';
+      // Só define modelo/cor se NÃO foram editados manualmente (respeita edição específica)
+      if (!it.modeloEditado) it.modeloBase = 'Alça ' + nomeCanon;
+      if (!it.corEditada) it.colecaoCor = corPorBolsa[nomeCanon] || '';
     }
-    if (info.bordado) it.bordado = info.bordado;
+    if (info.bordado && !it.bordadoEditado) it.bordado = info.bordado;
   });
 }
 
@@ -1119,6 +1119,9 @@ function mapItem(order, item, isDraft, listasCache, idx) {
     colecaoCor: colecaoCorFinal,
     bordado: bordadoFinal,
     foiEditado: foiEditado,
+    modeloEditado: !!(ovItem && ovItem.modelo_override),
+    corEditada: !!(ovItem && ovItem.colecao_cor_override),
+    bordadoEditado: !!(ovItem && ovItem.bordado_override !== undefined && ovItem.bordado_override !== null),
     obsCliente: obs.obsCliente || '—',
     obsInterna: (ovItem && ovItem.obs_interna) || '',
     noteRaw: order.note || '',
