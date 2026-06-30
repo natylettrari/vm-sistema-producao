@@ -741,14 +741,14 @@ function parseObs(note) {
 
   // Acumula bordados do mesmo modelo como LISTA (ex: 3 pingentes -> [Joaquim, EVA, Rizzo]),
   // para depois distribuir um por unidade na ordem em que aparecem.
+  // Cada LINHA da observação conta como uma peça — mesmo que o nome do bordado se repita
+  // (ex: 3 pingentes todos "MARTINNA" -> [MARTINNA, MARTINNA, MARTINNA]).
   const semBordadoRe = /^(sem\s*bordado|s\/bordado|sem|s\/|s\/b)$/i;
   const addBordado = (key, val) => {
     const limpo = (val == null || semBordadoRe.test(String(val).trim())) ? null : String(val).trim();
     if (!Array.isArray(bordadosPorModelo[key])) bordadosPorModelo[key] = [];
     if (limpo == null) return; // "sem bordado" não adiciona nome, só garante a chave
-    // Não duplica valor idêntico consecutivo
-    const jaTem = bordadosPorModelo[key].map(s=>s.toLowerCase());
-    if (!jaTem.includes(limpo.toLowerCase())) bordadosPorModelo[key].push(limpo);
+    bordadosPorModelo[key].push(limpo);
   };
 
   for (let line of lines) {
@@ -776,6 +776,19 @@ function parseObs(note) {
     }
 
     // Padrão: MODELO - BORDADO X (ex: "CRISTAL PP - BORDADO LA")
+    // REGRA GERAL: "MODELO ... BORDADO <resto da linha>" — pega tudo depois de "BORDADO",
+    // independente de ter ":", "-" ou nada. Ex: "ALÇA Madeleine - BORDADO MARTINNA",
+    // "PINGENTE BORDADO: Maria Eduarda", "Cleo BORDADO Joaquim" → tudo após BORDADO.
+    const mBordGeral = line.match(/^(.+?)\bBORDADO\b[\s:–-]*(.+)$/i);
+    if (mBordGeral) {
+      // chave = parte antes de BORDADO, sem separadores/sobras no fim
+      let key = mBordGeral[1].trim().toLowerCase().replace(/[\s:–-]+$/,'').replace(/^\d+\s+/, '');
+      const val = mBordGeral[2].trim();
+      const isModelo = MODELOS_MAP.some(m => key.includes(m.termo)) ||
+        ['mala','mochila','bolsa','madison','louise','madeleine','trocador','necessaire','porta','kit','alça','alca','frasqueira','pingente','kate','liz','cleo','cloé','cloe','cristal','documento','rodinha','laço','laco','capa','organizador','saquinho'].some(k => key.includes(k));
+      if (isModelo && val) { addBordado(key, val); continue; }
+    }
+
     const mBordModelo = line.match(/^([A-ZÀ-Úa-zà-ú\s0-9]+?)\s*[-–]\s*(?:BORDADO|INICIAL|NOME)[:\s]+(.+)/i);
     if (mBordModelo) {
       const key = mBordModelo[1].trim().toLowerCase();
