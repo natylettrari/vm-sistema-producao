@@ -623,7 +623,9 @@ function extrairModeloNecessaire(title) {
 
 function extrairModeloBase(title) {
   if (!title) return 'Outros';
-  const t = title.toLowerCase();
+  // Normaliza espaços múltiplos para um só (evita que "Louise  Mini" com espaço duplo
+  // deixe de casar "louise mini" e caia errado em "Louise").
+  const t = title.toLowerCase().replace(/\s+/g, ' ').trim();
   // Unifica todas as variações de documentos (porta documentos, kit documentos, etc.)
   if (t.includes('documento')) return 'Porta Documentos';
   if (t.includes('cristal')) { const c = extrairModeloCristal(title); if (c) return c; }
@@ -636,17 +638,27 @@ function extrairModeloBase(title) {
 }
 
 function extrairCorDoTitulo(title) {
+  const t0 = (title == null ? '' : String(title));
   // Coleção Glam é especial: combina com material (ex: "Glam Fita Rose com Linho Rose").
   // Quando o título contém "Glam", a cor/coleção é tudo de "Glam" até o fim.
-  const idxGlam = (title||'').toLowerCase().indexOf('glam');
+  const idxGlam = t0.toLowerCase().indexOf('glam');
   if (idxGlam !== -1) {
-    return title.slice(idxGlam).trim();
+    return t0.slice(idxGlam).trim();
   }
-  const cols = ['Linho','Ella','Urban Chic','Nós','Origem','Le Petit','Tressê Palha'];
+  const tLow = t0.toLowerCase();
+  const tSemAcento = tLow.normalize('NFD').replace(/[\u0300-\u036f]/g,'');
   const cores = ['Café','Caramelo','Off White','Marinho','Bordô','Cinza','Bege','Preto','Rosé','Marrom','Verde','Nude','Vinho','Rosa','Azul','Preta'];
   let c = '', r = '';
-  for (const x of cols) { if (title.toLowerCase().includes(x.toLowerCase())) { c = x; break; } }
-  for (const x of cores) { if (title.toLowerCase().includes(x.toLowerCase())) { r = x; break; } }
+  // PRIORIDADE: a coleção "Nós" é feita em linho, então títulos podem ter "Nós Linho".
+  // Se o título tem "Nós" (com ou sem acento), a coleção é Nós — o "Linho" é só o material.
+  // "Linho" só vira coleção quando "Nós" NÃO está presente.
+  if (/\bnos\b/.test(tSemAcento)) {
+    c = 'Nós';
+  } else {
+    const cols = ['Linho','Ella','Urban Chic','Origem','Le Petit','Tressê Palha'];
+    for (const x of cols) { if (tLow.includes(x.toLowerCase())) { c = x; break; } }
+  }
+  for (const x of cores) { if (tLow.includes(x.toLowerCase())) { r = x; break; } }
   return [c, r].filter(Boolean).join(' ');
 }
 
@@ -1168,17 +1180,46 @@ async function buscarTodosPedidos(token, params={}) {
   if (data_ate && filtro_data_tipo!=='pedido') dp+=`&created_at_max=${new Date(data_ate+'T23:59:59').toISOString()}`;
 
   let allOrders = [];
-  let url = `https://${SHOP}/admin/api/2024-01/orders.json?status=any&limit=250${dp}&fields=id,order_number,created_at,note,tags,line_items,fulfillment_status,financial_status,customer`;
+  let url = `https://${SHOP}/admin/api/2024-01/orders.json?status=any&limit=100${dp}&fields=id,order_number,created_at,note,tags,line_items,fulfillment_status,financial_status,customer`;
   while (url) {
-    const r = await fetch(url, { headers: shopHeaders(token) });
-    if (!r.ok) {
-      // Não derruba o sistema inteiro: registra e para a paginação com o que já tem.
-      const corpo = await r.text().catch(()=> '');
-      console.error(`Shopify retornou ${r.status} ao buscar pedidos:`, corpo.slice(0,300));
-      if (allOrders.length === 0) throw new Error(`Shopify ${r.status}`);
+    // Busca com RETRY: a Shopify às vezes corta a conexão no meio ("Premature close",
+    // ERR_STREAM_PREMATURE_CLOSE). Em vez de derrubar tudo com erro 500, tentamos a
+    // mesma página de novo até 4 vezes, com uma pequena pausa crescente entre tentativas.
+    let r = null, d = null, ultimoErro = null;
+    for (let tentativa = 1; tentativa <= 4; tentativa++) {
+      try {
+        r = await fetch(url, { headers: shopHeaders(token) });
+        if (!r.ok) {
+          // Erro de status HTTP (ex: 429 limite, 500 da Shopify): registra e tenta de novo.
+          const corpo = await r.text().catch(()=> '');
+          ultimoErro = new Error(`Shopify ${r.status}: ${corpo.slice(0,200)}`);
+          console.error(`[tentativa ${tentativa}/4] Shopify retornou ${r.status} ao buscar pedidos:`, corpo.slice(0,200));
+          // 429 (rate limit) ou 5xx merecem nova tentativa; 4xx (exceto 429) não adianta repetir.
+          if (r.status !== 429 && r.status < 500) throw ultimoErro;
+          await new Promise(res => setTimeout(res, 800 * tentativa));
+          continue;
+        }
+        d = await r.json(); // aqui pode estourar o "Premature close" se a conexão cortou
+        break; // sucesso: sai do laço de tentativas
+      } catch (e) {
+        ultimoErro = e;
+        console.error(`[tentativa ${tentativa}/4] Falha ao buscar/ler pedidos da Shopify:`, e.code || e.message);
+        d = null;
+        if (tentativa < 4) {
+          await new Promise(res => setTimeout(res, 800 * tentativa)); // pausa crescente: 0.8s, 1.6s, 2.4s
+        }
+      }
+    }
+
+    if (d == null) {
+      // Todas as tentativas falharam para esta página.
+      // Se já temos pedidos de páginas anteriores, seguimos com o que há (não derruba tudo);
+      // se nem a primeira página veio, aí sim reportamos o erro.
+      console.error('Não foi possível baixar uma página de pedidos após 4 tentativas.');
+      if (allOrders.length === 0) throw (ultimoErro || new Error('Falha ao buscar pedidos da Shopify'));
       break;
     }
-    const d = await r.json();
+
     allOrders = allOrders.concat(d.orders||[]);
     const link = r.headers.get('link')||'';
     const next = link.match(/<([^>]+)>;\s*rel="next"/);
