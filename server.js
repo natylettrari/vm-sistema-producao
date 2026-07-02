@@ -1,5 +1,10 @@
 const express = require('express');
-const fetch = require('node-fetch');
+// Usa o fetch NATIVO do Node (v18+) quando disponível — ele lida com gzip corretamente,
+// sem o bug de "Premature close" no Gunzip que o node-fetch apresenta em alguns ambientes.
+// Se o Node for antigo (sem fetch nativo), cai para o node-fetch como retaguarda.
+const fetch = (typeof globalThis.fetch === 'function')
+  ? ((...args) => globalThis.fetch(...args))
+  : require('node-fetch');
 const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
@@ -509,7 +514,7 @@ app.get('/auth/callback', async (req, res) => {
   } catch(e) { res.status(500).send('Erro: ' + e.message); }
 });
 
-function shopHeaders(t) { return { 'X-Shopify-Access-Token': t, 'Content-Type': 'application/json', 'Accept-Encoding': 'identity' }; }
+function shopHeaders(t) { return { 'X-Shopify-Access-Token': t, 'Content-Type': 'application/json' }; }
 
 // ── Modelos ───────────────────────────────────────────────────────────────────
 // Apelidos de produtos: nomes diferentes que devem ser tratados como o MESMO produto.
@@ -1180,7 +1185,7 @@ async function buscarTodosPedidos(token, params={}) {
   if (data_ate && filtro_data_tipo!=='pedido') dp+=`&created_at_max=${new Date(data_ate+'T23:59:59').toISOString()}`;
 
   let allOrders = [];
-  let url = `https://${SHOP}/admin/api/2024-01/orders.json?status=any&limit=100${dp}&fields=id,order_number,created_at,note,tags,line_items,fulfillment_status,financial_status,customer`;
+  let url = `https://${SHOP}/admin/api/2024-01/orders.json?status=any&limit=250${dp}&fields=id,order_number,created_at,note,tags,line_items,fulfillment_status,financial_status,customer`;
   while (url) {
     // Busca com RETRY: a Shopify às vezes corta a conexão no meio ("Premature close",
     // ERR_STREAM_PREMATURE_CLOSE). Em vez de derrubar tudo com erro 500, tentamos a
@@ -1188,7 +1193,7 @@ async function buscarTodosPedidos(token, params={}) {
     let r = null, d = null, ultimoErro = null;
     for (let tentativa = 1; tentativa <= 4; tentativa++) {
       try {
-        r = await fetch(url, { headers: shopHeaders(token), compress: false });
+        r = await fetch(url, { headers: shopHeaders(token) });
         if (!r.ok) {
           // Erro de status HTTP (ex: 429 limite, 500 da Shopify): registra e tenta de novo.
           const corpo = await r.text().catch(()=> '');
