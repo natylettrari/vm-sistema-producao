@@ -623,9 +623,7 @@ function extrairModeloNecessaire(title) {
 
 function extrairModeloBase(title) {
   if (!title) return 'Outros';
-  // Normaliza espaços múltiplos para um só (evita que "Louise  Mini" com espaço duplo
-  // deixe de casar "louise mini" e caia errado em "Louise").
-  const t = title.toLowerCase().replace(/\s+/g, ' ').trim();
+  const t = title.toLowerCase();
   // Unifica todas as variações de documentos (porta documentos, kit documentos, etc.)
   if (t.includes('documento')) return 'Porta Documentos';
   if (t.includes('cristal')) { const c = extrairModeloCristal(title); if (c) return c; }
@@ -638,27 +636,17 @@ function extrairModeloBase(title) {
 }
 
 function extrairCorDoTitulo(title) {
-  const t0 = (title == null ? '' : String(title));
   // Coleção Glam é especial: combina com material (ex: "Glam Fita Rose com Linho Rose").
   // Quando o título contém "Glam", a cor/coleção é tudo de "Glam" até o fim.
-  const idxGlam = t0.toLowerCase().indexOf('glam');
+  const idxGlam = (title||'').toLowerCase().indexOf('glam');
   if (idxGlam !== -1) {
-    return t0.slice(idxGlam).trim();
+    return title.slice(idxGlam).trim();
   }
-  const tLow = t0.toLowerCase();
-  const tSemAcento = tLow.normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+  const cols = ['Linho','Ella','Urban Chic','Nós','Origem','Le Petit','Tressê Palha'];
   const cores = ['Café','Caramelo','Off White','Marinho','Bordô','Cinza','Bege','Preto','Rosé','Marrom','Verde','Nude','Vinho','Rosa','Azul','Preta'];
   let c = '', r = '';
-  // PRIORIDADE: a coleção "Nós" é feita em linho, então títulos podem ter "Nós Linho".
-  // Se o título tem "Nós" (com ou sem acento), a coleção é Nós — o "Linho" é só o material.
-  // "Linho" só vira coleção quando "Nós" NÃO está presente.
-  if (/\bnos\b/.test(tSemAcento)) {
-    c = 'Nós';
-  } else {
-    const cols = ['Linho','Ella','Urban Chic','Origem','Le Petit','Tressê Palha'];
-    for (const x of cols) { if (tLow.includes(x.toLowerCase())) { c = x; break; } }
-  }
-  for (const x of cores) { if (tLow.includes(x.toLowerCase())) { r = x; break; } }
+  for (const x of cols) { if (title.toLowerCase().includes(x.toLowerCase())) { c = x; break; } }
+  for (const x of cores) { if (title.toLowerCase().includes(x.toLowerCase())) { r = x; break; } }
   return [c, r].filter(Boolean).join(' ');
 }
 
