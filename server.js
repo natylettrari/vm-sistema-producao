@@ -509,7 +509,7 @@ app.get('/auth/callback', async (req, res) => {
   } catch(e) { res.status(500).send('Erro: ' + e.message); }
 });
 
-function shopHeaders(t) { return { 'X-Shopify-Access-Token': t, 'Content-Type': 'application/json' }; }
+function shopHeaders(t) { return { 'X-Shopify-Access-Token': t, 'Content-Type': 'application/json', 'Accept-Encoding': 'identity' }; }
 
 // ── Modelos ───────────────────────────────────────────────────────────────────
 // Apelidos de produtos: nomes diferentes que devem ser tratados como o MESMO produto.
@@ -1188,7 +1188,7 @@ async function buscarTodosPedidos(token, params={}) {
     let r = null, d = null, ultimoErro = null;
     for (let tentativa = 1; tentativa <= 4; tentativa++) {
       try {
-        r = await fetch(url, { headers: shopHeaders(token) });
+        r = await fetch(url, { headers: shopHeaders(token), compress: false });
         if (!r.ok) {
           // Erro de status HTTP (ex: 429 limite, 500 da Shopify): registra e tenta de novo.
           const corpo = await r.text().catch(()=> '');
