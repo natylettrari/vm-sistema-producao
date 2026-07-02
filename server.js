@@ -623,7 +623,9 @@ function extrairModeloNecessaire(title) {
 
 function extrairModeloBase(title) {
   if (!title) return 'Outros';
-  const t = title.toLowerCase();
+  // Normaliza espaços múltiplos para um só (evita que "Louise  Mini" com espaço duplo
+  // deixe de casar "louise mini" e caia errado em "Louise").
+  const t = title.toLowerCase().replace(/\s+/g, ' ').trim();
   // Unifica todas as variações de documentos (porta documentos, kit documentos, etc.)
   if (t.includes('documento')) return 'Porta Documentos';
   if (t.includes('cristal')) { const c = extrairModeloCristal(title); if (c) return c; }
@@ -642,10 +644,18 @@ function extrairCorDoTitulo(title) {
   if (idxGlam !== -1) {
     return title.slice(idxGlam).trim();
   }
-  const cols = ['Linho','Ella','Urban Chic','Nós','Origem','Le Petit','Tressê Palha'];
+  const tSemAcento = (title||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
   const cores = ['Café','Caramelo','Off White','Marinho','Bordô','Cinza','Bege','Preto','Rosé','Marrom','Verde','Nude','Vinho','Rosa','Azul','Preta'];
   let c = '', r = '';
-  for (const x of cols) { if (title.toLowerCase().includes(x.toLowerCase())) { c = x; break; } }
+  // PRIORIDADE: a coleção "Nós" é feita em linho, então títulos podem ter "Nós Linho".
+  // Se o título tem "Nós" (com ou sem acento), a coleção é Nós — o "Linho" é só o material.
+  // "Linho" só vira coleção quando "Nós" NÃO está presente.
+  if (/\bnos\b/.test(tSemAcento)) {
+    c = 'Nós';
+  } else {
+    const cols = ['Linho','Ella','Urban Chic','Origem','Le Petit','Tressê Palha'];
+    for (const x of cols) { if (title.toLowerCase().includes(x.toLowerCase())) { c = x; break; } }
+  }
   for (const x of cores) { if (title.toLowerCase().includes(x.toLowerCase())) { r = x; break; } }
   return [c, r].filter(Boolean).join(' ');
 }
