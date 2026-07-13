@@ -660,7 +660,11 @@ function extrairCorDoTitulo(title) {
   if (/\bnos\b/.test(tSemAcento)) {
     c = 'Nós';
   } else {
-    const cols = ['Linho','Ella','Urban Chic','Origem','Le Petit','Tressê Palha'];
+    // "Ella" fica por ÚLTIMO de propósito: alguns produtos têm "Ella" no NOME
+    // (ex: "Porta Chupetas Ella", "Pingente Ella Nome"), não na coleção. Então, se o
+    // título traz outra coleção (Urban Chic, Linho, Origem...), essa outra vence, e o
+    // "Ella" é tratado como parte do nome. "Ella" só vira coleção quando é a única presente.
+    const cols = ['Linho','Urban Chic','Origem','Le Petit','Tressê Palha','Ella'];
     for (const x of cols) { if (tLow.includes(x.toLowerCase())) { c = x; break; } }
   }
   for (const x of cores) { if (tLow.includes(x.toLowerCase())) { r = x; break; } }
