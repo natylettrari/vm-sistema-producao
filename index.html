@@ -1149,6 +1149,12 @@ function limparFL() {
 let LISTAS_ORDEM = 'recentes'; // 'recentes', 'antigas', 'lote', 'numero', 'data_producao'
 let LISTAS_FILTRO_LOTE = '';
 let LISTAS_FILTRO_MES = '';
+let LOTES_FECHADOS = []; // lotes recolhidos em Minhas Listas
+function toggleLoteGrupo(chave){
+  if (LOTES_FECHADOS.includes(chave)) LOTES_FECHADOS = LOTES_FECHADOS.filter(c => c !== chave);
+  else LOTES_FECHADOS.push(chave);
+  renderMinhasListas();
+}
 let LISTAS_FILTRO_BUSCA = '';
 let TODOS_LOTES = [];
 
@@ -1496,9 +1502,11 @@ function renderMinhasListas() {
       </div>
     </div>
     
-    <!-- Grid de listas -->
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px">
-      ${listas.map(l => `
+    <!-- Listas agrupadas por LOTE -->
+    ${(() => {
+      if (!listas.length) return '';
+      // Função que monta o card de uma lista (mesmo card de antes)
+      const cardLista = l => `
         <div style="background:var(--bg2);border:1px solid var(--border);border-radius:10px;padding:16px 20px">
           <div style="display:flex;align-items:flex-start;justify-content:space-between;margin-bottom:10px">
             <div>
@@ -1525,11 +1533,36 @@ function renderMinhasListas() {
             `:`<button class="btn btn-outline btn-sm" onclick="editarDataLista('${l.id}')" style="font-size:10px">Alterar data</button>`}
             <button class="btn btn-outline btn-sm" style="color:#c0392b;border-color:#f5c6c2" onclick="excluirLista('${l.id}')">Excluir</button>
           </div>
-        </div>
-      `).join('')}
-    </div>
-    
-    ${!listas.length ? '<div class="loading">Nenhuma lista de produção encontrada com os filtros aplicados</div>' : ''}
+        </div>`;
+
+      // Agrupa as listas por lote (dataEnvio). Sem lote vai para um grupo próprio.
+      const grupos = {};
+      listas.forEach(l => {
+        const chave = l.dataEnvio || '__sem_lote__';
+        (grupos[chave] = grupos[chave] || []).push(l);
+      });
+      // Ordena os lotes (sem lote por último)
+      const chavesOrdenadas = Object.keys(grupos).sort((a,b) => {
+        if (a==='__sem_lote__') return 1;
+        if (b==='__sem_lote__') return -1;
+        return a.localeCompare(b);
+      });
+
+      return chavesOrdenadas.map(chave => {
+        const doGrupo = grupos[chave];
+        const titulo = chave==='__sem_lote__' ? 'Sem lote' : 'Lote ' + chave;
+        const fechado = LOTES_FECHADOS.includes(chave);
+        return `
+          <div style="margin-bottom:18px">
+            <div onclick="toggleLoteGrupo('${chave}')" style="display:flex;align-items:center;gap:10px;cursor:pointer;padding:10px 14px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;margin-bottom:${fechado?'0':'12px'}">
+              <span style="font-size:13px;color:var(--rose);transition:transform .2s;display:inline-block;transform:rotate(${fechado?'-90deg':'0deg'})">▼</span>
+              <span style="font-family:var(--serif);font-style:italic;font-size:18px;color:var(--rose)">${titulo}</span>
+              <span style="font-size:11px;color:var(--text3);background:var(--bg2);padding:2px 9px;border-radius:10px;border:1px solid var(--border)">${doGrupo.length} lista${doGrupo.length>1?'s':''}</span>
+            </div>
+            ${fechado ? '' : `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px">${doGrupo.map(cardLista).join('')}</div>`}
+          </div>`;
+      }).join('');
+    })()}
 
     ${(() => {
       let listasPeFiltradas = LISTAS_PE || [];
@@ -1708,6 +1741,12 @@ async function verificarNovasAlteracoes() {
 // ── Pronta Entrega (listas PE + peças + catálogo de estoque) ──────────────────
 let LISTAS_PE = [];
 let PE_ABA = 'estoque'; // 'estoque' ou 'listas'
+let PE_ABERTAS = []; // ids das listas PE expandidas (começam fechadas)
+function togglePE(id){
+  if (PE_ABERTAS.includes(id)) PE_ABERTAS = PE_ABERTAS.filter(x => x !== id);
+  else PE_ABERTAS.push(id);
+  renderPE();
+}
 
 async function carregarPE() {
   const el = document.getElementById('pe-cont');
@@ -1849,19 +1888,21 @@ function renderListasPE() {
     const pecas = l.pecas || [];
     const disp = pecas.filter(p=>!p.vendida).length;
     const vend = pecas.filter(p=>p.vendida).length;
+    const aberta = PE_ABERTAS.includes(l.id);
     return `
       <div style="background:#f3faf5;border:1px solid #a8d8b8;border-radius:10px;padding:14px 18px;margin-bottom:12px">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:8px">
-          <div>
+          <div onclick="togglePE('${l.id}')" style="cursor:pointer;flex:1;min-width:0">
+            <span style="font-size:13px;color:#1e6640;transition:transform .2s;display:inline-block;transform:rotate(${aberta?'0':'-90'}deg)">▼</span>
             <span style="font-family:var(--serif);font-style:italic;font-size:17px;color:#1e6640">Lista PE #${l.numero} · ${l.modelo}</span>
-            <div style="font-size:11px;color:var(--text3);margin-top:2px">${pecas.length} peça${pecas.length!==1?'s':''} · ${disp} disponíve${disp!==1?'is':'l'} · ${vend} vendida${vend!==1?'s':''}${l.data_envio?' · Envio '+l.data_envio:''}</div>
+            <div style="font-size:11px;color:var(--text3);margin-top:2px;margin-left:20px">${pecas.length} peça${pecas.length!==1?'s':''} · ${disp} disponíve${disp!==1?'is':'l'} · ${vend} vendida${vend!==1?'s':''}${l.data_envio?' · Envio '+l.data_envio:''}</div>
           </div>
           <div style="display:flex;gap:6px">
             <button class="btn btn-rose btn-sm" onclick="abrirAddPeca('${l.id}')">+ Peça</button>
             <button class="btn btn-outline btn-sm" onclick="excluirListaPE('${l.id}')">Excluir lista</button>
           </div>
         </div>
-        ${pecas.length ? `<div style="margin-top:10px;display:flex;flex-direction:column;gap:5px">
+        ${!aberta ? '' : (pecas.length ? `<div style="margin-top:10px;display:flex;flex-direction:column;gap:5px">
           ${pecas.map((p,pi) => `
             <div style="display:flex;justify-content:space-between;align-items:center;background:var(--bg2);border-radius:6px;padding:6px 11px;${p.vendida?'opacity:.6':''}">
               <div style="font-size:12px">
@@ -1879,7 +1920,7 @@ function renderListasPE() {
                      <button class="btn btn-outline btn-sm" onclick="excluirPeca('${p.id}')">×</button>`}
               </div>
             </div>`).join('')}
-        </div>` : '<div style="font-size:12px;color:var(--text3);margin-top:8px">Nenhuma peça nesta lista ainda.</div>'}
+        </div>` : '<div style="font-size:12px;color:var(--text3);margin-top:8px">Nenhuma peça nesta lista ainda.</div>')}
       </div>`;
   }).join('');
 }
@@ -3638,11 +3679,17 @@ async function carregarFicha() {
   // Filtrar localmente usando PEDIDOS já carregados
   let peds = [...PEDIDOS];
 
-  // Filtro por lista de produção — mostra só os itens da lista escolhida
+  // Filtro por lista de produção — mostra só os itens da lista escolhida.
+  // As listas PE (número "PE-...") são tratadas separadamente mais abaixo, então aqui
+  // consideramos apenas as listas normais selecionadas.
   const fListas = FICHA_LISTAS.slice();
+  const fListasNormais = fListas.filter(n => !String(n).startsWith('PE-'));
   const fLista = fListas.length ? fListas.join(',') : ''; // usado para título/condições
-  if (fListas.length) {
-    peds = peds.filter(p => fListas.includes(String(p.listaNumero)));
+  if (fListasNormais.length) {
+    peds = peds.filter(p => fListasNormais.includes(String(p.listaNumero)));
+  } else if (fListas.length) {
+    // Só listas PE foram selecionadas: nenhum pedido normal entra.
+    peds = [];
   }
 
   // Filtro por lote (normaliza para dia/mês, ignorando o ano)
@@ -3685,25 +3732,36 @@ async function carregarFicha() {
   // Todos os itens (bolsas e acessórios) usam tecido, então entram na ficha de corte.
   // O filtro por tipo (Todos / Bolsas / Acess.) acima permite separar quando necessário.
 
-  // Peças de pronta entrega disponíveis (não vendidas), se a opção estiver marcada
+  // Peças de pronta entrega disponíveis (não vendidas).
+  // Entram na ficha em dois casos:
+  //  (a) o usuário marcou o checkbox "incluir PE" (traz todas as PE que passam nos filtros), ou
+  //  (b) o usuário selecionou listas PE específicas na busca (números começam com "PE-").
   const incluirPE = (document.getElementById('ficha-incluir-pe')||{checked:false}).checked;
+  const listasPEsel = fListas.filter(n => String(n).startsWith('PE-')).map(n => String(n).slice(3));
+  const listasNormaisSel = fListas.filter(n => !String(n).startsWith('PE-'));
   let pecasPE = [];
-  if (incluirPE) {
-    (LISTAS_PE||[]).forEach(l => (l.pecas||[]).forEach(pc => {
-      if (pc.vendida) return;
-      const modeloBase = (typeof extrairModeloBase === 'function') ? extrairModeloBase(pc.modelo||l.modelo||'') : (pc.modelo||l.modelo||'');
-      pecasPE.push({
-        modeloBase: modeloBase || (pc.modelo||l.modelo),
-        colecaoCor: pc.colecao_cor || 'Sem cor',
-        listaNumero: l.numero,
-        isPE: true,
+  if (incluirPE || listasPEsel.length) {
+    (LISTAS_PE||[]).forEach(l => {
+      // Se há listas PE específicas selecionadas, só entra a que foi escolhida.
+      if (listasPEsel.length && !listasPEsel.includes(String(l.numero))) return;
+      (l.pecas||[]).forEach(pc => {
+        if (pc.vendida) return;
+        const modeloBase = (typeof extrairModeloBase === 'function') ? extrairModeloBase(pc.modelo||l.modelo||'') : (pc.modelo||l.modelo||'');
+        pecasPE.push({
+          modeloBase: modeloBase || (pc.modelo||l.modelo),
+          colecaoCor: pc.colecao_cor || 'Sem cor',
+          listaNumero: 'PE-' + l.numero,
+          isPE: true,
+        });
       });
-    }));
+    });
     // Aplica os mesmos filtros da ficha às peças PE
     if (FICHA_MODELOS.length) pecasPE = pecasPE.filter(p => FICHA_MODELOS.some(m => modeloCombina(p.modeloBase, m)));
     if (FICHA_TIPO !== 'todos') pecasPE = pecasPE.filter(p => getTipo(p.modeloBase) === FICHA_TIPO);
-    if (FICHA_LOTE || fDe || fAte || fLista) pecasPE = []; // quando filtra por lote/período/lista específica, PE não entra
     if (colecao) pecasPE = pecasPE.filter(p => colecaoCombina(p.colecaoCor, colecao));
+    // Se filtrou por lote/período OU escolheu listas NORMAIS específicas (sem escolher PE),
+    // as PE gerais não entram — a não ser que o usuário tenha escolhido listas PE explicitamente.
+    if (!listasPEsel.length && (FICHA_LOTE || fDe || fAte || listasNormaisSel.length)) pecasPE = [];
   }
 
   if (!peds.length && !pecasPE.length) {
@@ -3873,15 +3931,26 @@ function alternarVisaoFicha() {
 // Monta a lista de listas disponíveis (que têm itens nos pedidos), com nome e modelos
 function _listasDisponiveis() {
   const numeros = [...new Set(PEDIDOS.map(p => p.listaNumero).filter(Boolean))];
-  return numeros.map(n => {
+  const normais = numeros.map(n => {
     const l = (LISTAS||[]).find(x => String(x.numero) === String(n)) || {};
     // Modelos: usa o campo da lista, ou deduz dos pedidos daquela lista
     let modelos = Array.isArray(l.modelos) ? l.modelos.slice() : [];
     if (!modelos.length) {
       modelos = [...new Set(PEDIDOS.filter(p => String(p.listaNumero)===String(n)).map(p => p.modeloBase).filter(Boolean))];
     }
-    return { numero: String(n), nome: l.nome || '', modelos, dataProducao: l.dataProducao || '' };
-  }).sort((a,b) => a.numero.localeCompare(b.numero, undefined, {numeric:true}));
+    return { numero: String(n), nome: l.nome || '', modelos, dataProducao: l.dataProducao || '', isPE: false };
+  });
+  // Listas de PRONTA ENTREGA (têm peças cadastradas à mão). Prefixo "PE-" no número
+  // para não colidir com as listas normais que podem ter o mesmo número.
+  const pe = (LISTAS_PE||[]).filter(l => (l.pecas||[]).some(p=>!p.vendida)).map(l => ({
+    numero: 'PE-' + String(l.numero),
+    nome: 'Pronta Entrega · ' + (l.modelo||''),
+    modelos: [l.modelo].filter(Boolean),
+    dataProducao: l.data_producao || '',
+    isPE: true,
+    peId: l.id,
+  }));
+  return normais.concat(pe).sort((a,b) => String(a.numero).localeCompare(String(b.numero), undefined, {numeric:true}));
 }
 
 function filtrarListaSugestoes(val) {
@@ -3905,8 +3974,10 @@ function filtrarListaSugestoes(val) {
   box.innerHTML = listas.map(l => {
     const modelosTxt = (l.modelos||[]).slice(0,4).join(', ') + ((l.modelos||[]).length>4 ? '…' : '');
     const dataTxt = l.dataProducao ? ` · sai ${l.dataProducao}` : '';
+    const rotulo = l.isPE ? `Lista PE #${String(l.numero).replace(/^PE-/,'')}` : `Lista #${l.numero}`;
+    const tag = l.isPE ? '<span style="font-size:9px;background:#dff0e5;color:#1e6640;padding:1px 6px;border-radius:8px;margin-left:5px;vertical-align:middle">PE</span>' : '';
     return `<div class="sug-item" style="padding:8px 11px;cursor:pointer;border-bottom:1px solid var(--border)" onclick="selecionarFichaLista('${l.numero}')">
-      <div style="font-size:12px;font-weight:600;color:var(--rose)">Lista #${l.numero}${dataTxt}</div>
+      <div style="font-size:12px;font-weight:600;color:var(--rose)">${rotulo}${tag}${dataTxt}</div>
       <div style="font-size:10px;color:var(--text2);margin-top:1px">${modelosTxt || 'sem modelos'}</div>
     </div>`;
   }).join('');
@@ -3939,8 +4010,10 @@ function renderFichaListasChips() {
   wrap.innerHTML = FICHA_LISTAS.map(n => {
     const l = disp.find(x => x.numero === n);
     const modelos = l && l.modelos.length ? ' · ' + l.modelos.slice(0,2).join(', ') + (l.modelos.length>2?'…':'') : '';
-    return `<span style="background:var(--rose);color:#fff;padding:5px 9px;border-radius:7px;font-size:11px;display:inline-flex;align-items:center;gap:6px">
-      Lista #${n}${modelos}
+    const ehPE = String(n).startsWith('PE-');
+    const rotulo = ehPE ? ('Lista PE #' + String(n).slice(3)) : ('Lista #' + n);
+    return `<span style="background:${ehPE?'#1e6640':'var(--rose)'};color:#fff;padding:5px 9px;border-radius:7px;font-size:11px;display:inline-flex;align-items:center;gap:6px">
+      ${rotulo}${modelos}
       <span onclick="removerFichaLista('${n}')" style="cursor:pointer;font-size:14px;line-height:1">×</span>
     </span>`;
   }).join('');
