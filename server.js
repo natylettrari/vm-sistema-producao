@@ -246,9 +246,19 @@ async function deletarLista(id) {
 }
 
 async function proximoNumeroLista() {
-  const r = await pool.query(`SELECT numero FROM listas_producao ORDER BY criada_em DESC LIMIT 1`);
-  if (!r.rows.length) return '0001';
-  return String(parseInt(r.rows[0].numero||'0') + 1).padStart(4, '0');
+  // Considera as DUAS tabelas (listas de produção e listas de pronta entrega),
+  // porque elas compartilham a mesma sequência de numeração. Se olhasse só uma,
+  // duas listas criadas em sequência em tabelas diferentes receberiam o mesmo número.
+  let maior = 0;
+  try {
+    const r1 = await pool.query(`SELECT MAX(CAST(numero AS INTEGER)) AS m FROM listas_producao`);
+    if (r1.rows.length && r1.rows[0].m != null) maior = Math.max(maior, parseInt(r1.rows[0].m) || 0);
+  } catch(e) { console.error('proximoNumeroLista listas_producao:', e.message); }
+  try {
+    const r2 = await pool.query(`SELECT MAX(CAST(numero AS INTEGER)) AS m FROM listas_pe`);
+    if (r2.rows.length && r2.rows[0].m != null) maior = Math.max(maior, parseInt(r2.rows[0].m) || 0);
+  } catch(e) { console.error('proximoNumeroLista listas_pe:', e.message); }
+  return String(maior + 1).padStart(4, '0');
 }
 
 // ── Status de produção por item (não se perde ao sincronizar) ─────────────────
