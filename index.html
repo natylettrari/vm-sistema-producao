@@ -3796,10 +3796,10 @@ async function carregarFicha() {
       if (!ficha[modelo]) ficha[modelo] = {};
       ficha[modelo][cor] = (ficha[modelo][cor]||0) + 1;
     });
-    // Peças PE: dentro do modelo, item separado marcado com a lista
+    // Peças PE: dentro do modelo, agrupadas por cor (sem sufixo repetido de lista)
     pecasPE.forEach(p => {
       const modelo = p.modeloBase || 'Sem modelo';
-      const nomeItem = `${p.colecaoCor} · PRONTA ENTREGA #${p.listaNumero}`;
+      const nomeItem = p.colecaoCor || 'Sem cor';
       if (!ficha[modelo]) ficha[modelo] = {};
       ficha[modelo][nomeItem] = (ficha[modelo][nomeItem]||0) + 1;
       peItens[modelo+'||'+nomeItem] = true;
@@ -3812,10 +3812,10 @@ async function carregarFicha() {
       if (!ficha[cor]) ficha[cor] = {};
       ficha[cor][modelo] = (ficha[cor][modelo]||0) + 1;
     });
-    // Peças PE: dentro da cor, item separado marcado com a lista
+    // Peças PE: dentro da cor, agrupadas por modelo (sem sufixo repetido de lista)
     pecasPE.forEach(p => {
       const cor = p.colecaoCor || 'Sem cor';
-      const nomeItem = `${p.modeloBase} · PRONTA ENTREGA #${p.listaNumero}`;
+      const nomeItem = p.modeloBase || 'Sem modelo';
       if (!ficha[cor]) ficha[cor] = {};
       ficha[cor][nomeItem] = (ficha[cor][nomeItem]||0) + 1;
       peItens[cor+'||'+nomeItem] = true;
