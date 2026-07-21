@@ -272,6 +272,22 @@ async function loadStatusItens() {
   } catch(e) { console.error('loadStatusItens:', e.message); return {}; }
 }
 
+// Limpa o status_override manual de itens que entraram numa lista nova.
+// Motivo: quando um pedido é editado à mão para "aguardando" (para sair de novo) e
+// depois entra numa lista de produção, o "em produção" da lista deve valer. Sem isso,
+// o "aguardando" manual sobreporia o status da lista e o pedido ficaria preso.
+async function limparStatusOverrideItens(itemIds) {
+  if (!Array.isArray(itemIds) || !itemIds.length) return;
+  for (const itemId of itemIds) {
+    try {
+      await pool.query(
+        `UPDATE itens_editados SET status_override = NULL WHERE item_id = $1 AND status_override IS NOT NULL`,
+        [String(itemId)]
+      );
+    } catch(e) { console.error('limparStatusOverrideItens:', e.message); }
+  }
+}
+
 // Marca uma lista de itemIds com um status (default em_producao)
 async function marcarItensProducao(itemIds, listaNumero, status='em_producao') {
   if (!Array.isArray(itemIds) || !itemIds.length) return;
@@ -1549,6 +1565,9 @@ app.post('/api/listas', exigirEdicao, async (req,res) => {
   await salvarLista(lista);
   // Marca cada item da lista como "em produção" no banco (por item, não por pedido)
   await marcarItensProducao(pedidoIds||[], numero, 'em_producao');
+  // Limpa qualquer status manual antigo (ex: "aguardando" posto à mão para o pedido sair
+  // de novo) — agora que ele entrou numa lista, o status correto é "em produção".
+  await limparStatusOverrideItens(pedidoIds||[]);
   CACHE_TS = 0; // invalida cache para atualizar status e listaNumero
   res.json({lista});
 });
