@@ -1,4 +1,9 @@
 const express = require('express');
+// Prefere IPv4 ao resolver nomes de domínio. Em alguns ambientes (ex: Railway), o IPv6
+// fica indisponível/instável, e o fetch nativo tenta IPv6 primeiro — o que causa
+// "fetch failed" / AggregateError [ETIMEDOUT] ao conectar na Shopify. Forçar IPv4 evita
+// esse tempo esgotado de conexão. (Node 16.4+: setDefaultResultOrder.)
+try { require('dns').setDefaultResultOrder('ipv4first'); } catch (e) { console.error('dns ipv4first:', e.message); }
 // Usa o fetch NATIVO do Node (v18+) quando disponível — ele lida com gzip corretamente,
 // sem o bug de "Premature close" no Gunzip que o node-fetch apresenta em alguns ambientes.
 // Se o Node for antigo (sem fetch nativo), cai para o node-fetch como retaguarda.
@@ -1223,7 +1228,9 @@ async function buscarTodosPedidos(token, params={}) {
     let r = null, d = null, ultimoErro = null;
     for (let tentativa = 1; tentativa <= 4; tentativa++) {
       try {
-        r = await fetch(url, { headers: shopHeaders(token) });
+        // Timeout explícito: se a conexão travar, aborta em 25s e deixa o retry agir,
+        // em vez de ficar pendurada até estourar sozinha.
+        r = await fetch(url, { headers: shopHeaders(token), signal: AbortSignal.timeout(25000) });
         if (!r.ok) {
           // Erro de status HTTP (ex: 429 limite, 500 da Shopify): registra e tenta de novo.
           const corpo = await r.text().catch(()=> '');
