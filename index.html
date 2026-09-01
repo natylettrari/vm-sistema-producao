@@ -3704,6 +3704,28 @@ async function carregarFicha() {
   // Filtro por período de envio (De/Até) — pega vários lotes de uma vez
   const fDe = (document.getElementById('ficha-de')||{value:''}).value;   // formato yyyy-mm-dd
   const fAte = (document.getElementById('ficha-ate')||{value:''}).value;
+
+  // ESTADO VAZIO: a ficha começa limpa. Só monta o corte quando o usuário puxa algo
+  // (uma lista, um lote, um período, um modelo, um tipo ou uma coleção). Sem isso, mostrar
+  // "todos os pedidos" (121 listas) não ajuda — polui e mistura produção antiga com nova.
+  const temFiltro = fListas.length || FICHA_LOTE || fDe || fAte
+    || (FICHA_MODELOS && FICHA_MODELOS.length) || (FICHA_TIPO && FICHA_TIPO !== 'todos') || colecao;
+  if (!temFiltro) {
+    document.getElementById('ficha-cont').innerHTML = `
+      <div style="text-align:center;padding:48px 24px;color:var(--text3)">
+        <div style="font-size:34px;margin-bottom:12px">✂️</div>
+        <div style="font-family:var(--serif);font-style:italic;font-size:20px;color:var(--rose);margin-bottom:8px">Escolha o que cortar</div>
+        <div style="font-size:13px;max-width:440px;margin:0 auto;line-height:1.6">
+          Busque uma <strong>lista</strong> (ex: <em>0003</em>) ou um <strong>modelo</strong> (ex: <em>Madison</em>) no campo à esquerda,
+          ou informe um <strong>lote de envio</strong> para juntar todas as listas daquele lote.
+          A ficha de corte aparece aqui com o que você escolher.
+        </div>
+      </div>`;
+    document.getElementById('sim-box').innerHTML = '';
+    window._FICHA_DADOS = null; // nada para imprimir enquanto vazio
+    return;
+  }
+
   if (fDe || fAte) {
     const limDe = fDe ? new Date(fDe + 'T00:00:00') : null;
     const limAte = fAte ? new Date(fAte + 'T23:59:59') : null;
