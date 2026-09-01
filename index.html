@@ -3832,13 +3832,33 @@ async function carregarFicha() {
   const tituloFiltro = [fListas.length?('Lista'+(fListas.length>1?'s':'')+' #'+fListas.join(', #')):'', FICHA_LOTE?'Lote '+FICHA_LOTE:'', periodoLabel, FICHA_MODELOS.join(', '), FICHA_TIPO!=='todos'?(FICHA_TIPO==='bolsa'?'Bolsas':'Acessórios'):''].filter(Boolean).join(' · ') || 'Todos os pedidos';
 
   // Identifica quais listas entram neste corte (produção normais + pronta entrega)
-  const listasNorm = [...new Set(peds.map(p => p.listaNumero).filter(Boolean))].sort();
+  const listasNorm = [...new Set(peds.map(p => p.listaNumero).filter(Boolean))].sort((a,b)=>String(a).localeCompare(String(b),undefined,{numeric:true}));
   const listasPE = [...new Set(pecasPE.map(p => p.listaNumero).filter(Boolean))].sort();
-  const etiquetasListas = [
-    ...listasNorm.map(n => 'Lista #' + n),
-    ...listasPE.map(n => 'Lista PE #' + n),
-  ];
   const semLista = peds.some(p => !p.listaNumero); // há peças que não estão em nenhuma lista
+  const totalListas = listasNorm.length + listasPE.length;
+  // É "corte completo" quando o usuário não filtrou por lista/lote/período específico.
+  const corteCompleto = !fListas.length && !FICHA_LOTE && !fDe && !fAte;
+
+  // Monta o bloco "Listas neste corte":
+  //  - Corte completo com MUITAS listas → resumo compacto (não polui com 127 chips).
+  //  - Filtrado (lote, período ou listas escolhidas) → mostra os chips das listas envolvidas,
+  //    que aí é uma quantidade pequena e útil de conferir.
+  let blocoListas = '';
+  const chip = txt => `<span style="display:inline-block;margin-left:6px;background:var(--bg2);border:1px solid var(--border2);border-radius:12px;padding:2px 10px;font-size:11px">${txt}</span>`;
+  if (corteCompleto && totalListas > 12) {
+    blocoListas = `<div style="font-size:12px;color:var(--text2);margin-bottom:14px;padding:8px 12px;background:var(--bg3);border-radius:8px">
+      <strong style="color:var(--text3);font-size:10px;text-transform:uppercase;letter-spacing:.06em">Corte completo</strong>
+      <span style="margin-left:8px">${listasNorm.length} lista${listasNorm.length!==1?'s':''} de produção${listasPE.length?` + ${listasPE.length} de pronta entrega`:''}${semLista?' + pedidos avulsos':''}</span>
+    </div>`;
+  } else if (totalListas || semLista) {
+    const etqs = [...listasNorm.map(n => 'Lista #' + n), ...listasPE.map(n => 'Lista PE #' + n)];
+    const loteLabel = FICHA_LOTE ? `<strong style="color:var(--rose);font-size:11px">Lote ${FICHA_LOTE}</strong> reúne: ` : '';
+    blocoListas = `<div style="font-size:12px;color:var(--text2);margin-bottom:14px;padding:8px 12px;background:var(--bg3);border-radius:8px">
+      <strong style="color:var(--text3);font-size:10px;text-transform:uppercase;letter-spacing:.06em">Listas neste corte:</strong>
+      ${loteLabel}${etqs.map(chip).join('')}
+      ${semLista?`<span style="display:inline-block;margin-left:6px;color:var(--text3);font-size:11px;font-style:italic">+ pedidos avulsos (sem lista)</span>`:''}
+    </div>`;
+  }
 
   let html = `<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;flex-wrap:wrap;gap:8px">
     <div style="font-size:13px;color:var(--text3)"><strong style="color:var(--text);font-size:15px;font-family:var(--serif);font-style:italic">${tot} peças</strong> · ${tituloFiltro}${totPE?` · <span style="color:#1e6640">${totPE} de pronta entrega</span>`:''}</div>
@@ -3847,11 +3867,7 @@ async function carregarFicha() {
       <span style="background:var(--bg3);padding:4px 10px;border-radius:6px;color:var(--text2)">🎀 ${peds.filter(p=>getTipo(p.modeloBase)!=='bolsa').length} acessórios</span>
     </div>
   </div>
-  ${(etiquetasListas.length || semLista) ? `<div style="font-size:12px;color:var(--text2);margin-bottom:14px;padding:8px 12px;background:var(--bg3);border-radius:8px">
-    <strong style="color:var(--text3);font-size:10px;text-transform:uppercase;letter-spacing:.06em">Listas neste corte:</strong>
-    ${etiquetasListas.map(e=>`<span style="display:inline-block;margin-left:6px;background:var(--bg2);border:1px solid var(--border2);border-radius:12px;padding:2px 10px;font-size:11px">${e}</span>`).join('')}
-    ${semLista?`<span style="display:inline-block;margin-left:6px;color:var(--text3);font-size:11px;font-style:italic">+ pedidos avulsos (sem lista)</span>`:''}
-  </div>` : ''}
+  ${blocoListas}
   <div class="ficha-grid">`;
 
   for(const g of grupos){
@@ -3861,8 +3877,12 @@ async function carregarFicha() {
   }
   html+='</div>';
   document.getElementById('ficha-cont').innerHTML=html;
+  // Texto das listas para a versão impressa (mesma lógica: resumo se completo, senão as listas)
+  const etiquetasImpressao = (corteCompleto && totalListas > 12)
+    ? [`Corte completo · ${listasNorm.length} lista${listasNorm.length!==1?'s':''} de produção${listasPE.length?` + ${listasPE.length} de pronta entrega`:''}`]
+    : [...listasNorm.map(n => 'Lista #' + n), ...listasPE.map(n => 'Lista PE #' + n)];
   // Guarda para impressão em janela limpa
-  window._FICHA_DADOS = { grupos, tot, totPE, tituloFiltro, visao: FICHA_VISAO, etiquetasListas, semLista };
+  window._FICHA_DADOS = { grupos, tot, totPE, tituloFiltro, visao: FICHA_VISAO, etiquetasListas: etiquetasImpressao, semLista };
 }
 
 // Imprime a ficha em janela limpa (evita folha vazia)
