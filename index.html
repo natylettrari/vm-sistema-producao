@@ -1833,26 +1833,103 @@ function renderVendasPE() {
 }
 
 // Catálogo de estoque: todas as peças não vendidas de todas as listas PE
-function renderEstoquePE() {
-  const cont = document.getElementById('pe-estoque-cont');
-  if (!cont) return;
+// Agrupado modelo → cor. A linha da cor mostra a contagem; clicar abre os cards.
+let PE_GRUPOS_ABERTOS = []; // chaves "modelo||cor" expandidas (começam fechadas)
+
+function togglePEGrupo(k) {
+  const key = decodeURIComponent(k);
+  if (PE_GRUPOS_ABERTOS.includes(key)) PE_GRUPOS_ABERTOS = PE_GRUPOS_ABERTOS.filter(x => x !== key);
+  else PE_GRUPOS_ABERTOS.push(key);
+  renderEstoquePE();
+}
+
+function expandirTudoPE(abrir) {
+  if (!abrir) { PE_GRUPOS_ABERTOS = []; renderEstoquePE(); return; }
+  const todos = [];
+  estoquePEDisponiveis().lista.forEach(p => {
+    const k = (p.modelo||'—') + '||' + (p.colecao_cor||'(sem cor)');
+    if (!todos.includes(k)) todos.push(k);
+  });
+  PE_GRUPOS_ABERTOS = todos;
+  renderEstoquePE();
+}
+
+// Peças disponíveis (não vendidas), já aplicando a busca da tela
+function estoquePEDisponiveis() {
   const busca = (document.getElementById('pe-busca')||{value:''}).value.toLowerCase().trim();
-  let disponiveis = [];
-  LISTAS_PE.forEach(l => (l.pecas||[]).forEach(p => { if(!p.vendida) disponiveis.push({...p, listaNumero:l.numero}); }));
+  let lista = [];
+  LISTAS_PE.forEach(l => (l.pecas||[]).forEach(p => { if(!p.vendida) lista.push({...p, listaNumero:l.numero}); }));
   if (busca) {
-    disponiveis = disponiveis.filter(p =>
+    lista = lista.filter(p =>
       (p.modelo||'').toLowerCase().includes(busca) ||
       (p.colecao_cor||'').toLowerCase().includes(busca) ||
       (p.bordado||'').toLowerCase().includes(busca)
     );
   }
+  return { lista, busca };
+}
+
+// Resumo em texto puro, pronto pra colar no WhatsApp
+function copiarResumoPE() {
+  const { lista, busca } = estoquePEDisponiveis();
+  if (!lista.length) { toast('Nada para copiar'); return; }
+  const porModelo = {};
+  lista.forEach(p => {
+    const m = p.modelo||'—', c = p.colecao_cor||'(sem cor)';
+    porModelo[m] = porModelo[m] || {};
+    porModelo[m][c] = (porModelo[m][c]||0) + 1;
+  });
+  let txt = 'PRONTA ENTREGA — ' + new Date().toLocaleDateString('pt-BR') + '\n';
+  txt += lista.length + ' peça' + (lista.length>1?'s':'') + ' disponíve' + (lista.length>1?'is':'l') + (busca ? ' (filtro: '+busca+')' : '') + '\n';
+  Object.entries(porModelo)
+    .sort((a,b) => Object.values(b[1]).reduce((s,n)=>s+n,0) - Object.values(a[1]).reduce((s,n)=>s+n,0))
+    .forEach(([m, cores]) => {
+      const tot = Object.values(cores).reduce((s,n)=>s+n,0);
+      txt += '\n' + m.toUpperCase() + ' (' + tot + ')\n';
+      Object.entries(cores).sort((a,b)=>b[1]-a[1]).forEach(([c,n]) => { txt += '• ' + n + ' ' + c + '\n'; });
+    });
+  const ok = () => toast('Resumo copiado!');
+  if (navigator.clipboard && navigator.clipboard.writeText) {
+    navigator.clipboard.writeText(txt).then(ok).catch(() => copiarFallbackPE(txt, ok));
+  } else copiarFallbackPE(txt, ok);
+}
+
+function copiarFallbackPE(txt, ok) {
+  const ta = document.createElement('textarea');
+  ta.value = txt; ta.style.position = 'fixed'; ta.style.opacity = '0';
+  document.body.appendChild(ta); ta.select();
+  try { document.execCommand('copy'); ok(); } catch(e) { toast('Não consegui copiar'); }
+  document.body.removeChild(ta);
+}
+
+function cardPecaPE(p) {
+  return `<div style="background:#f3faf5;border:1px solid #a8d8b8;border-radius:8px;padding:9px 12px">
+    <div style="font-size:12px;${p.bordado?'color:var(--rose);font-weight:500':'color:var(--text3)'}">${p.bordado||'Sem bordado'}</div>
+    ${p.listaNumero?`<div style="font-size:10px;color:var(--text3);margin-top:2px">Lista PE-${p.listaNumero}</div>`:''}
+    <div style="display:flex;gap:6px;margin-top:8px">
+      <button class="btn btn-rose btn-sm" style="flex:1" onclick="abrirVenderPeca('${p.id}')">Vender</button>
+      <button class="btn btn-outline btn-sm" onclick="abrirEditarPeca('${p.id}')">✏️</button>
+    </div>
+  </div>`;
+}
+
+function renderEstoquePE() {
+  const cont = document.getElementById('pe-estoque-cont');
+  if (!cont) return;
+  const { lista: disponiveis, busca } = estoquePEDisponiveis();
+
   if (!disponiveis.length) {
     cont.innerHTML = `<div style="font-size:13px;color:var(--text3);padding:14px">${busca?'Nenhuma peça disponível para essa busca.':'Nenhuma peça em estoque. Crie uma lista PE e adicione peças.'}</div>`;
     return;
   }
-  // Agrupa por modelo
+
+  // Agrupa modelo → cor → peças
   const porModelo = {};
-  disponiveis.forEach(p => { (porModelo[p.modelo] = porModelo[p.modelo]||[]).push(p); });
+  disponiveis.forEach(p => {
+    const m = p.modelo||'—', c = p.colecao_cor||'(sem cor)';
+    porModelo[m] = porModelo[m] || {};
+    (porModelo[m][c] = porModelo[m][c] || []).push(p);
+  });
 
   // Contador geral por modelo (sobre TODO o estoque, não o filtrado) — panorama rápido
   const totalPorModelo = {};
@@ -1861,24 +1938,43 @@ function renderEstoquePE() {
     `<span onclick="document.getElementById('pe-busca').value='${m.replace(/'/g,"")}';renderEstoquePE()" style="cursor:pointer;font-size:11px;background:#edf7f1;color:#1e6640;border:1px solid #a8d8b8;padding:3px 9px;border-radius:12px">${m}: <strong>${n}</strong></span>`
   ).join('');
 
+  const corpo = Object.entries(porModelo)
+    .sort((a,b) => Object.values(b[1]).reduce((s,x)=>s+x.length,0) - Object.values(a[1]).reduce((s,x)=>s+x.length,0))
+    .map(([modelo, cores]) => {
+      const totalModelo = Object.values(cores).reduce((s,x)=>s+x.length,0);
+      const linhas = Object.entries(cores).sort((a,b)=>b[1].length-a[1].length).map(([cor, pecas]) => {
+        const key = modelo + '||' + cor;
+        const aberta = busca ? true : PE_GRUPOS_ABERTOS.includes(key);
+        const comBordado = pecas.filter(p=>p.bordado).length;
+        return `
+        <div style="border:1px solid var(--border);border-radius:8px;margin-bottom:6px;overflow:hidden">
+          <div onclick="togglePEGrupo('${encodeURIComponent(key)}')" style="cursor:pointer;display:flex;align-items:center;gap:10px;padding:9px 13px;background:${aberta?'#edf7f1':'var(--bg2)'}">
+            <span style="color:var(--text3);font-size:11px;width:9px">${aberta?'▾':'▸'}</span>
+            <span style="font-size:13px;font-weight:500;flex:1">${cor}</span>
+            ${comBordado?`<span style="font-size:10px;color:var(--rose)">${comBordado} c/ bordado</span>`:''}
+            <span style="font-size:12px;font-weight:600;color:#1e6640;background:#edf7f1;border:1px solid #a8d8b8;border-radius:11px;padding:1px 9px;min-width:24px;text-align:center">${pecas.length}</span>
+          </div>
+          ${aberta?`<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:8px;padding:10px 13px 12px">${pecas.map(cardPecaPE).join('')}</div>`:''}
+        </div>`;
+      }).join('');
+      return `
+      <div style="margin-bottom:18px">
+        <div style="font-weight:600;font-size:14px;color:var(--rose);margin-bottom:8px">${modelo} <span style="color:var(--text3);font-weight:400">· ${totalModelo}</span></div>
+        ${linhas}
+      </div>`;
+    }).join('');
+
   cont.innerHTML = `
     ${chips?`<div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid var(--border)">${chips}</div>`:''}
-    <div style="font-size:12px;color:var(--text2);margin-bottom:10px">${disponiveis.length} peça${disponiveis.length>1?'s':''} disponíve${disponiveis.length>1?'is':'l'}${busca?' para "'+busca+'"':' em estoque'}</div>
-    ${Object.entries(porModelo).map(([modelo, pecas]) => `
-      <div style="margin-bottom:16px">
-        <div style="font-weight:600;font-size:14px;color:var(--rose);margin-bottom:8px">${modelo} <span style="color:var(--text3);font-weight:400">· ${pecas.length}</span></div>
-        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px">
-          ${pecas.map(p => `
-            <div style="background:#f3faf5;border:1px solid #a8d8b8;border-radius:8px;padding:10px 13px">
-              <div style="font-size:13px;font-weight:500">${p.colecao_cor||'(sem cor)'}</div>
-              ${p.bordado?`<div style="font-size:11px;color:var(--rose);margin-top:2px">${p.bordado}</div>`:''}
-              <div style="display:flex;gap:6px;margin-top:8px">
-                <button class="btn btn-rose btn-sm" style="flex:1" onclick="abrirVenderPeca('${p.id}')">Vender</button>
-                <button class="btn btn-outline btn-sm" onclick="abrirEditarPeca('${p.id}')">✏️</button>
-              </div>
-            </div>`).join('')}
-        </div>
-      </div>`).join('')}`;
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:12px">
+      <div style="font-size:12px;color:var(--text2)">${disponiveis.length} peça${disponiveis.length>1?'s':''} disponíve${disponiveis.length>1?'is':'l'}${busca?' para "'+busca+'"':' em estoque'}</div>
+      <div style="display:flex;gap:6px">
+        <button class="btn btn-outline btn-sm" onclick="expandirTudoPE(true)">Expandir tudo</button>
+        <button class="btn btn-outline btn-sm" onclick="expandirTudoPE(false)">Recolher tudo</button>
+        <button class="btn btn-outline btn-sm" onclick="copiarResumoPE()">📋 Copiar resumo</button>
+      </div>
+    </div>
+    ${corpo}`;
 }
 
 // Listas PE de produção
