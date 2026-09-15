@@ -1149,11 +1149,17 @@ function limparFL() {
 let LISTAS_ORDEM = 'recentes'; // 'recentes', 'antigas', 'lote', 'numero', 'data_producao'
 let LISTAS_FILTRO_LOTE = '';
 let LISTAS_FILTRO_MES = '';
-let LOTES_FECHADOS = []; // lotes recolhidos em Minhas Listas
+let LOTES_ABERTOS = []; // lotes expandidos em Minhas Listas (começam todos fechados)
 function toggleLoteGrupo(chave){
-  if (LOTES_FECHADOS.includes(chave)) LOTES_FECHADOS = LOTES_FECHADOS.filter(c => c !== chave);
-  else LOTES_FECHADOS.push(chave);
+  if (LOTES_ABERTOS.includes(chave)) LOTES_ABERTOS = LOTES_ABERTOS.filter(c => c !== chave);
+  else LOTES_ABERTOS.push(chave);
   renderMinhasListas();
+}
+// Converte "DD/MM/AAAA" em data real para ordenar corretamente
+function dataLoteOrdem(chave){
+  const m = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec((chave||'').trim());
+  if (!m) return null;
+  return new Date(+m[3], +m[2]-1, +m[1]).getTime();
 }
 let LISTAS_FILTRO_BUSCA = '';
 let TODOS_LOTES = [];
@@ -1541,17 +1547,21 @@ function renderMinhasListas() {
         const chave = l.dataEnvio || '__sem_lote__';
         (grupos[chave] = grupos[chave] || []).push(l);
       });
-      // Ordena os lotes (sem lote por último)
+      // Ordena os lotes por DATA REAL, do mais recente para o mais antigo (sem lote por último)
       const chavesOrdenadas = Object.keys(grupos).sort((a,b) => {
         if (a==='__sem_lote__') return 1;
         if (b==='__sem_lote__') return -1;
-        return a.localeCompare(b);
+        const da = dataLoteOrdem(a), db = dataLoteOrdem(b);
+        if (da===null && db===null) return a.localeCompare(b);
+        if (da===null) return 1;
+        if (db===null) return -1;
+        return db - da;
       });
 
       return chavesOrdenadas.map(chave => {
         const doGrupo = grupos[chave];
         const titulo = chave==='__sem_lote__' ? 'Sem lote' : 'Lote ' + chave;
-        const fechado = LOTES_FECHADOS.includes(chave);
+        const fechado = !LOTES_ABERTOS.includes(chave);
         return `
           <div style="margin-bottom:18px">
             <div onclick="toggleLoteGrupo('${chave}')" style="display:flex;align-items:center;gap:10px;cursor:pointer;padding:10px 14px;background:var(--bg3);border:1px solid var(--border);border-radius:8px;margin-bottom:${fechado?'0':'12px'}">
