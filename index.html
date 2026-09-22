@@ -1006,6 +1006,26 @@ function buscarLote() {
   selLote(null, data);
 }
 
+// Mostra, embaixo do status, em qual lista de produção o pedido está (clicável)
+function infoListaPedido(p) {
+  if (p.listaNumero) {
+    return `<div onclick="abrirListaPorNumero('${p.listaNumero}',event)" title="Abrir a lista #${p.listaNumero}"
+      style="cursor:pointer;margin-top:4px;font-size:10px;font-weight:600;color:#1e6640;white-space:nowrap">📋 Lista #${p.listaNumero}</div>
+      ${p.listaDataProducao?`<div style="font-size:9px;color:var(--text3);white-space:nowrap">Produção ${p.listaDataProducao}</div>`:''}`;
+  }
+  if (p.status === 'em_producao') {
+    return `<div title="Está como Em produção mas não aparece em nenhuma lista salva" style="margin-top:4px;font-size:9px;color:#8a6400;white-space:nowrap">⚠ sem lista</div>`;
+  }
+  return '';
+}
+
+function abrirListaPorNumero(numero, ev) {
+  if (ev) ev.stopPropagation();
+  const l = (LISTAS||[]).find(x => String(x.numero) === String(numero) || (parseInt(x.numero,10) === parseInt(numero,10) && !isNaN(parseInt(numero,10))));
+  if (!l) { toast('Lista #' + numero + ' não encontrada — tente SINCRONIZAR'); return; }
+  verLista(l.id);
+}
+
 function renderTabela(pedidos) {
   if(!pedidos.length) { document.getElementById('ped-cont').innerHTML='<div class="loading">Nenhum pedido encontrado</div>'; return; }
   const rows = pedidos.map(p => {
@@ -1016,7 +1036,7 @@ function renderTabela(pedidos) {
     const duExib = (p.diasUteisRestantes!==null&&p.diasUteisRestantes!==undefined) ? `<div style="font-size:9px;color:${p.diasUteisRestantes<3?'#c0392b':p.diasUteisRestantes<7?'#8a6400':'var(--text3)'}">${p.diasUteisRestantes<0?'Atrasado':p.diasUteisRestantes+'du'}</div>` : '';
     return `<tr class="${p.isUrgente?'urgente-row':''}${p.isPrioridade?' prioridade-row':''}">
       <td style="width:28px"><input type="checkbox" class="rcb" data-id="${p.itemId}"></td>
-      <td style="width:85px" class="num">${p.numero}${p.isDraft?'<span class="draft-pill">D</span>':''}${p.isKitItem?'<span class="kit-pill">Kit</span>':''}${p.isPrioridade?'<span class="prio-badge">★</span>':''}${p.foiEditado?'<span class="edit-badge">Ed.</span>':''}${p.listaNumero?`<span class="lista-pill" title="${p.listaDataProducao?'Sai em '+p.listaDataProducao:'Em produção'}">#${p.listaNumero}${p.listaDataProducao?' · '+p.listaDataProducao:''}</span>`:''}</td>
+      <td style="width:85px" class="num">${p.numero}${p.isDraft?'<span class="draft-pill">D</span>':''}${p.isKitItem?'<span class="kit-pill">Kit</span>':''}${p.isPrioridade?'<span class="prio-badge">★</span>':''}${p.foiEditado?'<span class="edit-badge">Ed.</span>':''}</td>
       <td style="width:65px;font-size:11px;color:var(--text3)">${p.dataPedido||'—'}</td>
       <td style="width:120px;font-weight:500;font-size:12px">${p.modeloBase}</td>
       <td style="width:130px;font-size:11px">${p.colecaoCor}</td>
@@ -1025,7 +1045,7 @@ function renderTabela(pedidos) {
       <td class="obs-txt" style="min-width:150px;font-size:11px;color:var(--text3)" title="${p.noteRaw||p.obsCliente||''}">${p.obsCliente||'—'}</td>
       <td style="width:80px"><span class="tv">${p.vendedora}</span></td>
       <td style="width:75px;font-size:11px${p.status==='atrasado'?';color:#c0392b;font-weight:500':''}">${dataExib}${duExib}</td>
-      <td style="width:95px"><span class="bdg ${SC[p.status]||'bw'}" onclick="mostrarOpcoesStatus('${p.orderId}','${p.numero}',event)" style="cursor:pointer;user-select:none" title="Clique para alterar status">${SL[p.status]||p.status}</span></td>
+      <td style="width:95px"><span class="bdg ${SC[p.status]||'bw'}" onclick="mostrarOpcoesStatus('${p.orderId}','${p.numero}',event)" style="cursor:pointer;user-select:none" title="Clique para alterar status">${SL[p.status]||p.status}</span>${infoListaPedido(p)}</td>
       <td style="width:70px"><button class="edit-btn" onclick="abrirEdicao('${p.itemId}','${p.orderId}','${p.numero}',event)">✏️ Editar</button></td>
     </tr>`;
   }).join('');
