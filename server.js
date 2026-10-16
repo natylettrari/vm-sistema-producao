@@ -670,7 +670,7 @@ function extrairModeloBase(title) {
   const tSemAcento = t.normalize('NFD').replace(/[\u0300-\u036f]/g,'');
   if (tSemAcento.includes('alca') && tSemAcento.includes('carrinho')) return 'Alça de Carrinho';
   for (const m of MODELOS_MAP) { if (t.includes(m.termo)) return m.chave; }
-  return title.replace(/\b(bolsa|mochila|mala|maternidade|ella|urban chic|nós|nos|origem|le petit|tressê palha|bege|preto|marinho|caramelo|café|cafe|cinza|bordô|bordo|off white|rosé|rose|marrom|verde|nude|vinho|rosa|azul|preta)\b/gi,'').replace(/\s+/g,' ').trim() || title;
+  return title.replace(/\b(bolsa|mochila|mala|maternidade|ella|urban chic|denim chic|tweed|nós|nos|origem|le petit|tressê palha|bege|preto|marinho|caramelo|café|cafe|cinza|bordô|bordo|off white|rosé|rose|marrom|verde|nude|vinho|rosa|azul|preta)\b/gi,'').replace(/\s+/g,' ').trim() || title;
 }
 
 function extrairCorDoTitulo(title) {
@@ -695,7 +695,9 @@ function extrairCorDoTitulo(title) {
     // (ex: "Porta Chupetas Ella", "Pingente Ella Nome"), não na coleção. Então, se o
     // título traz outra coleção (Urban Chic, Linho, Origem...), essa outra vence, e o
     // "Ella" é tratado como parte do nome. "Ella" só vira coleção quando é a única presente.
-    const cols = ['Linho','Urban Chic','Origem','Le Petit','Tressê Palha','Ella'];
+    // 'Denim Chic' vem ANTES de 'Urban Chic': as duas terminam em "Chic", e a ordem
+    // garante que um título com "Denim Chic" nunca seja lido como Urban Chic.
+    const cols = ['Linho','Tweed','Denim Chic','Urban Chic','Origem','Le Petit','Tressê Palha','Ella'];
     for (const x of cols) { if (tLow.includes(x.toLowerCase())) { c = x; break; } }
   }
   for (const x of cores) { if (tLow.includes(x.toLowerCase())) { r = x; break; } }
