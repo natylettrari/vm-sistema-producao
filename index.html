@@ -55,7 +55,7 @@ tbody tr:hover td{background:var(--rose-ll)}
 .bdg{display:inline-block;font-size:10px;padding:2px 8px;border-radius:20px}
 .bw{background:#fef9ec;color:#8a6400}.bp{background:#edf7f1;color:#1e6640}
 .ba{background:#fdecea;color:#c0392b}.bpronto{background:#eaf0fb;color:#1a4a8a}
-.bpe{background:#f5eef9;color:#5c2d8a}.benv{background:#e8f4fd;color:#1a5276}
+.bpe{background:#f5eef9;color:#5c2d8a}.bout{background:#111;color:#fff;letter-spacing:.04em}.benv{background:#e8f4fd;color:#1a5276}
 .edit-badge{display:inline-block;font-size:9px;padding:1px 5px;border-radius:3px;background:#fff3cd;color:#856404;margin-left:3px;font-weight:500}
 .edit-btn{font-size:10px;padding:2px 8px;border-radius:5px;border:1px solid var(--border2);background:transparent;color:var(--text3);cursor:pointer;transition:all .15s}
 .edit-btn:hover{border-color:var(--rose);color:var(--rose);background:var(--rose-ll)}
@@ -331,7 +331,7 @@ input[type=checkbox]{accent-color:var(--rose);cursor:pointer}
     <select id="f-mod" onchange="filtrar()"><option value="">Todos os modelos</option></select>
     <select id="f-col" onchange="filtrar()"><option value="">Todas as coleções</option><option>Ella</option><option>Urban Chic</option><option>Nós</option><option>Origem</option><option>Le Petit</option><option>Tressê Palha</option><option>Tweed</option><option>Denim Chic</option><option>Glam</option></select>
     <select id="f-vend" onchange="filtrar()"><option value="">Todas as vendedoras</option></select>
-    <select id="f-st" onchange="filtrar()"><option value="">Todos os status</option><option value="aguardando">Aguardando</option><option value="em_producao">Em produção</option><option value="pronto">Pronto</option><option value="atrasado">Atrasado</option><option value="pronta_entrega">Pronta entrega</option><option value="enviado">Enviado</option><option value="__prioridade">★ Prioridade</option><option value="__urgente">! Urgente</option></select>
+    <select id="f-st" onchange="filtrar()"><option value="">Todos os status</option><option value="aguardando">Aguardando</option><option value="em_producao">Em produção</option><option value="pronto">Pronto</option><option value="atrasado">Atrasado</option><option value="pronta_entrega">Pronta entrega</option><option value="outlet_pronta">OUTLET pronta</option><option value="enviado">Enviado</option><option value="__prioridade">★ Prioridade</option><option value="__urgente">! Urgente</option></select>
     <span style="font-size:11px;color:var(--text3)">De</span>
     <input type="date" id="f-de" onchange="filtrar()" style="width:128px">
     <span style="font-size:11px;color:var(--text3)">até</span>
@@ -759,8 +759,8 @@ function colecaoCombina(valorItem, filtro) {
 let PEDIDOS = [], FILTRADOS = [], LISTAS = [];
 let CAL_MES = new Date().getMonth(), CAL_ANO = new Date().getFullYear();
 let DT_TAB = 'envio', LOTE_SEL = null, TIPO_SEL = 'todos';
-const SC = {aguardando:'bw',em_producao:'bp',pronto:'bpronto',atrasado:'ba',pronta_entrega:'bpe',enviado:'benv'};
-const SL = {aguardando:'Aguardando',em_producao:'Em produção',pronto:'Pronto',atrasado:'Atrasado',pronta_entrega:'Pronta entrega',enviado:'Enviado'};
+const SC = {aguardando:'bw',em_producao:'bp',pronto:'bpronto',atrasado:'ba',pronta_entrega:'bpe',outlet_pronta:'bout',enviado:'benv'};
+const SL = {aguardando:'Aguardando',em_producao:'Em produção',pronto:'Pronto',atrasado:'Atrasado',pronta_entrega:'Pronta entrega',outlet_pronta:'OUTLET pronta',enviado:'Enviado'};
 
 document.addEventListener('DOMContentLoaded', () => {
   carregarUsuarioLogado();
@@ -2953,6 +2953,11 @@ const CORES_MOD={'madison':'#8A4C52','madison mini':'#c9888e','mala':'#BD9459','
 function getCM(m){const ml=(m||'').toLowerCase();for(const[k,v]of Object.entries(CORES_MOD)){if(ml.includes(k))return v;}return '#888';}
 
 function renderLista(peds,grupos,ordBy,de,ate) {
+  // Peças do OUTLET já estão prontas: nunca entram em lista de produção
+  if (peds.some(p => p.status === 'outlet_pronta')) {
+    peds = peds.filter(p => p.status !== 'outlet_pronta');
+    grupos = agrupar(peds, ordBy);
+  }
   const comBord=peds.filter(p=>p.bordado).length;
   const atras=peds.filter(p=>p.status==='atrasado').length;
   const titulo=LOTE_SEL?`Lote ${LOTE_SEL}`:(de?new Date(de+'T12:00:00').toLocaleDateString('pt-BR')+(ate&&ate!==de?' – '+new Date(ate+'T12:00:00').toLocaleDateString('pt-BR'):''):'Todos');
@@ -3202,7 +3207,7 @@ async function confirmarGerarLista() {
     // Atualiza o status localmente NA HORA (rápido, sem esperar a Shopify)
     const idsSet = new Set(itemIds.map(String));
     PEDIDOS.forEach(p => {
-      if (idsSet.has(String(p.itemId)) && !['pronto','enviado','pronta_entrega'].includes(p.status)) {
+      if (idsSet.has(String(p.itemId)) && !['pronto','enviado','pronta_entrega','outlet_pronta'].includes(p.status)) {
         p.status = 'em_producao';
         p.listaNumero = lista.numero;
       }

@@ -1184,6 +1184,10 @@ function mapItem(order, item, isDraft, listasCache, idx) {
   if (ovItem && ovItem.status_override) {
     statusFinal = ovItem.status_override;
   }
+  // Peça do OUTLET: já está pronta (peça única, já bordada). Aparece no sistema, mas com o status
+  // "OUTLET PRONTA" e fica FORA das listas de produção. Só deixa de ser assim quando é enviada.
+  const outlet = ehOutlet(item);
+  if (outlet && statusFinal !== 'enviado') statusFinal = 'outlet_pronta';
 
   return {
     id: isDraft ? 'D-'+order.id : order.id,
@@ -1199,6 +1203,7 @@ function mapItem(order, item, isDraft, listasCache, idx) {
     colecaoCor: colecaoCorFinal,
     bordado: bordadoFinal,
     foiEditado: foiEditado,
+    outlet: outlet,
     modeloEditado: !!(ovItem && ovItem.modelo_override),
     corEditada: !!(ovItem && ovItem.colecao_cor_override),
     bordadoEditado: !!(ovItem && ovItem.bordado_override !== undefined && ovItem.bordado_override !== null),
@@ -1305,9 +1310,6 @@ async function buscarTodosPedidos(token, params={}) {
     let __idx = 0;
     const itensPedido = [];
     for (const i of o.line_items) {
-      // Peças do OUTLET já estão prontas (peça única, já bordada): NUNCA vão para a produção.
-      // Os outros itens do mesmo pedido (ex.: "Complete seu kit") seguem normalmente.
-      if (ehOutlet(i)) continue;
       for (const ei of expandirKit(i)) {
         for (const u of expandirQuantidade(ei)) {
           itensPedido.push(mapItem(o, u, false, listasCache, __idx++));
@@ -1330,7 +1332,6 @@ async function buscarTodosPedidos(token, params={}) {
         let __idx = 0;
         const itensPedido = [];
         for (const i of o.line_items) {
-          if (ehOutlet(i)) continue; // peça do OUTLET não vai para a produção
           for (const ei of expandirKit(i)) {
             for (const u of expandirQuantidade(ei)) {
               itensPedido.push(mapItem(o, u, true, listasCache, __idx++));
@@ -1454,7 +1455,7 @@ app.get('/api/ficha-corte', async (req,res) => {
   const token = await loadToken();
   if (!token) return res.status(401).json({error:'Não autorizado'});
   try {
-    const lista = await getPedidos(token);
+    const lista = (await getPedidos(token)).filter(p => p.status !== 'outlet_pronta'); // OUTLET já está pronta
     const filtrado = req.query.dataEnvio ? lista.filter(p=>p.dataEnvio===req.query.dataEnvio) : lista;
     res.json({ficha:gerarFichaCorte(filtrado),simulador:simularPrazo(filtrado,req.query.dataEnvio||null),total:filtrado.length});
   } catch(e){res.status(500).json({error:e.message});}
@@ -1464,7 +1465,7 @@ app.get('/api/painel-bordado', async (req,res) => {
   const token = await loadToken();
   if (!token) return res.status(401).json({error:'Não autorizado'});
   try {
-    const lista = await getPedidos(token);
+    const lista = (await getPedidos(token)).filter(p => p.status !== 'outlet_pronta'); // OUTLET já está pronta
     const filtrado = req.query.dataEnvio ? lista.filter(p=>p.dataEnvio===req.query.dataEnvio) : lista;
     const comBordado = filtrado.filter(p=>p.bordado).sort((a,b)=>{
       const da=a.dataEnvio!=='—'?a.dataEnvio.split('/').reverse().join(''):'99999999';
