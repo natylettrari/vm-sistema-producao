@@ -1095,6 +1095,11 @@ function getBordadoLista(obs, modeloBase) {
   return Array.isArray(lista) ? lista : [lista];
 }
 
+// Item do OUTLET: o nome do produto sempre tem a palavra "OUTLET"
+function ehOutlet(item) {
+  return /\boutlet\b/i.test(`${item && item.title || ''} ${item && item.name || ''}`);
+}
+
 function calcStatus(tags, dataEnvio, isProntaEntrega, fulfillmentStatus) {
   const t = (tags||'').toLowerCase();
   if (fulfillmentStatus === 'fulfilled') return 'enviado';
@@ -1300,6 +1305,9 @@ async function buscarTodosPedidos(token, params={}) {
     let __idx = 0;
     const itensPedido = [];
     for (const i of o.line_items) {
+      // Peças do OUTLET já estão prontas (peça única, já bordada): NUNCA vão para a produção.
+      // Os outros itens do mesmo pedido (ex.: "Complete seu kit") seguem normalmente.
+      if (ehOutlet(i)) continue;
       for (const ei of expandirKit(i)) {
         for (const u of expandirQuantidade(ei)) {
           itensPedido.push(mapItem(o, u, false, listasCache, __idx++));
@@ -1322,6 +1330,7 @@ async function buscarTodosPedidos(token, params={}) {
         let __idx = 0;
         const itensPedido = [];
         for (const i of o.line_items) {
+          if (ehOutlet(i)) continue; // peça do OUTLET não vai para a produção
           for (const ei of expandirKit(i)) {
             for (const u of expandirQuantidade(ei)) {
               itensPedido.push(mapItem(o, u, true, listasCache, __idx++));
